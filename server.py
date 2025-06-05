@@ -5,6 +5,19 @@ import signal
 import sys
 from datetime import datetime
 from threading import Lock
+import hashlib
+
+import sqlite3
+connection = sqlite3.connect('testDB.db', check_same_thread=False) # Грузим БД из файла
+cursor = connection.cursor() # Курсор - интерфейс взаимодействия с БД
+
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS Users (
+username TEXT PRIMARY KEY,
+password TEXT NOT NULL
+)
+''') # Создаем таблицу пользователей, ник у каждого уникальный, поэтому задается как ключ, защита от создания существующего пользователя на уровне БД
+
 
 HOST = '127.0.0.1'
 PORT = 1604
@@ -100,16 +113,47 @@ def wrap_message(message, max_width=70):
 
     return result
 
+def check_user_exists_db(username):
+    # Проверяем: есть ли уже такой пользователь в БД
+    cursor.execute('SELECT * FROM Users WHERE username = ?', (username,))
+    user = cursor.fetchone()
+    return True if user else False
+
+def auth_db(username, password):
+    # Проводим аутентефикацию пользователя
+    cursor.execute('SELECT * FROM Users WHERE username = ?', (username,))
+    user = cursor.fetchone()
+    if user[1] == hashlib.sha256(password.encode('utf-8')).hexdigest():
+        return True
+    else:
+        return False
+
+
 def handle_client(client_socket, addr):
     try:
         client_socket.settimeout(SOCKET_TIMEOUT)
         client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 16384)
         
         try:
-            nickname = client_socket.recv(1024).decode('utf-8').strip()
+            # Получаем первое сообщение от пользователя - авторизационное сообщение
+            # ------------------
+            init_user_message = client_socket.recv(2048).decode('utf-8').strip()
+            user_credentials = init_user_message.split(";") # Сообщение состоит из: логин;пароль
+            nickname = user_credentials[0]
+            
+            if check_user_exists_db(nickname) == False: # Только если позователя нет
+                password = hashlib.sha256(user_credentials[1].encode('utf-8')).hexdigest() # Создаем хэш пароля
+
+                cursor.execute('INSERT INTO Users (username, password) VALUES (?, ?)', (nickname, password,)) # Добавляем нашего пользователя
+                connection.commit() # Применяем изменения в БД
+            else:
+                print("Пользователь уже существует")
+            # ------------------
+
             if not nickname or len(nickname) > MAX_NICKNAME_LENGTH:
                 send_system_message(client_socket, "ERROR:INVALID_NICKNAME")
                 return
+            
                 
             with clients_lock:
                 if nickname in clients.values():
@@ -198,6 +242,7 @@ def remove(client_socket):
 def graceful_shutdown(signum, frame):
     """Корректное завершение работы сервера"""
     print("\nЗавершение работы сервера...")
+    connection.close()
     with clients_lock:
         for client in clients.copy():
             send_system_message(client, "SERVER_SHUTDOWN")
@@ -218,6 +263,7 @@ def start_server():
         print("Сервер запущен и ожидает подключения...")
     except Exception as e:
         print(f"Ошибка запуска сервера: {str(e)}")
+        connection.close()
         return
 
     # Запускаем поток обновления списка пользователей
