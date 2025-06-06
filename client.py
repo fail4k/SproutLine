@@ -1,6 +1,3 @@
-#set "TCL_LIBRARY=C:\Users\sereg\AppData\Local\Programs\Python\Python313\tcl\tcl8.6"
-#set "TK_LIBRARY=C:\Users\sereg\AppData\Local\Programs\Python\Python313\tcl\tk8.6"
-
 import customtkinter as ctk
 import socket
 import threading
