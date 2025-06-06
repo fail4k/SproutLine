@@ -1,3 +1,4 @@
+import os
 import socket
 import threading
 import time
@@ -17,7 +18,6 @@ username TEXT PRIMARY KEY,
 password TEXT NOT NULL
 )
 ''') # Создаем таблицу пользователей, ник у каждого уникальный, поэтому задается как ключ, защита от создания существующего пользователя на уровне БД
-
 
 HOST = '127.0.0.1'
 PORT = 1604
@@ -123,43 +123,63 @@ def auth_db(username, password):
     # Проводим аутентефикацию пользователя
     cursor.execute('SELECT * FROM Users WHERE username = ?', (username,))
     user = cursor.fetchone()
-    if user[1] == hashlib.sha256(password.encode('utf-8')).hexdigest():
+    if user[1] == password:
         return True
     else:
         return False
 
 
 def handle_client(client_socket, addr):
+
+
     try:
         client_socket.settimeout(SOCKET_TIMEOUT)
         client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 16384)
         
         try:
-            # Получаем первое сообщение от пользователя - авторизационное сообщение
-            # ------------------
-            init_user_message = client_socket.recv(2048).decode('utf-8').strip()
-            user_credentials = init_user_message.split(";") # Сообщение состоит из: логин;пароль
-            nickname = user_credentials[0]
-            
-            if check_user_exists_db(nickname) == False: # Только если позователя нет
-                password = hashlib.sha256(user_credentials[1].encode('utf-8')).hexdigest() # Создаем хэш пароля
+            init_user_message = client_socket.recv(2048).decode('utf-8').strip() # Получаем первое сообщение от пользователя - авторизационное сообщение
 
-                cursor.execute('INSERT INTO Users (username, password) VALUES (?, ?)', (nickname, password,)) # Добавляем нашего пользователя
-                connection.commit() # Применяем изменения в БД
-            else:
-                print("Пользователь уже существует")
-            # ------------------
+            user_credentials = init_user_message.split(";") # Сообщение состоит из: логин;пароль;авторизация/аутентефикация (1/0)
+            nickname = user_credentials[0]
+            password = hashlib.sha256(user_credentials[1].encode('utf-8')).hexdigest() # Создаем хэш пароля
+            option = user_credentials[2] # Вытаскиваем действие
 
             if not nickname or len(nickname) > MAX_NICKNAME_LENGTH:
                 send_system_message(client_socket, "ERROR:INVALID_NICKNAME")
                 return
             
-                
+            if option == "1": # Авторизация
+                if check_user_exists_db(nickname) == False: # Только если позователя нет
+
+                    cursor.execute('INSERT INTO Users (username, password) VALUES (?, ?)', (nickname, password,)) # Добавляем нашего пользователя
+                    connection.commit() # Применяем изменения в БД
+                    print("Авторизован пользователь: ", nickname)
+                    client_socket.send("201".encode('utf-8')) # Возвращаем статус запроса клиенту
+                    return
+                else:
+                    print(f"Пользователь {nickname} уже существует")
+                    client_socket.send("409".encode('utf-8'))
+                    client_socket.close()
+                    return
+
+            else:
+
+                if auth_db(nickname, password): # Аутентефикация
+                    print(f"Пользователь {nickname} прошёл аутентефикацию.")
+                    client_socket.send("200".encode('utf-8'))
+                    client_socket.close()
+                else:
+                    print(f"Пользователь {nickname} НЕ прошёл аутентефикацию.")
+                    client_socket.send("401".encode('utf-8'))
+                    client_socket.close()
+                    return
+                 
             with clients_lock:
                 if nickname in clients.values():
                     send_system_message(client_socket, "ERROR:NICKNAME_TAKEN")
                     return
                 clients[client_socket] = nickname
+
         except Exception as e:
             print(f"Ошибка при получении никнейма от {addr}: {str(e)}")
             return
@@ -241,7 +261,7 @@ def remove(client_socket):
 
 def graceful_shutdown(signum, frame):
     """Корректное завершение работы сервера"""
-    print("\nЗавершение работы сервера...")
+    os.write(1, b"\nServer shutdown correctfully...")
     connection.close()
     with clients_lock:
         for client in clients.copy():
@@ -250,21 +270,6 @@ def graceful_shutdown(signum, frame):
     sys.exit(0)
 
 def start_server():
-    # Регистрируем обработчики сигналов
-    signal.signal(signal.SIGINT, graceful_shutdown)
-    signal.signal(signal.SIGTERM, graceful_shutdown)
-
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    
-    try:
-        server_socket.bind((HOST, PORT))
-        server_socket.listen(5)
-        print("Сервер запущен и ожидает подключения...")
-    except Exception as e:
-        print(f"Ошибка запуска сервера: {str(e)}")
-        connection.close()
-        return
 
     # Запускаем поток обновления списка пользователей
     update_thread = threading.Thread(target=update_users_periodically)
@@ -276,4 +281,23 @@ def start_server():
         threading.Thread(target=handle_client, args=(client_socket, addr)).start()
 
 if __name__ == "__main__":
-    start_server()
+    # Регистрируем обработчики сигналов
+    signal.signal(signal.SIGINT, graceful_shutdown)
+    signal.signal(signal.SIGTERM, graceful_shutdown)
+
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    
+    try:
+        server_socket.bind((HOST, PORT))
+        server_socket.listen(5)
+        print("Сервер запущен и ожидает подключения...")
+
+        threading.Thread(target=start_server, daemon=True).start()
+
+        while True:
+            pass
+
+    except Exception as e:
+        print(f"Ошибка запуска сервера: {str(e)}")
+        connection.close()
