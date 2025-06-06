@@ -3,8 +3,10 @@ import socket
 import threading
 import time
 from PIL import Image
-from customtkinter import CTkImage
 import json
+from CTkMessagebox import CTkMessagebox
+
+
 
 class MessengerApp:
     def __init__(self, master, client_socket, nickname):
@@ -129,12 +131,12 @@ class MessengerApp:
             self.image_send = Image.open("img/send.png")
             self.image_send = self.image_send.resize((50, 50), Image.LANCZOS)
 
-            self.photo_send = CTkImage(light_image=self.image_send, dark_image=self.image_send)
-            
+            self.photo_send = ctk.CTkImage(light_image=self.image_send, dark_image=self.image_send)
+
             self.image_file = Image.open("img/file.png")
             self.image_file = self.image_file.resize((50, 50), Image.LANCZOS)
 
-            self.photo_file = CTkImage(light_image=self.image_file, dark_image=self.image_file)
+            self.photo_file = ctk.CTkImage(light_image=self.image_file, dark_image=self.image_file)
         except Exception as e:
             print(f"Ошибка при загрузке изображения: {e}")
             self.photo_send = None
@@ -345,7 +347,7 @@ class MessengerApp:
             try:
                 self.client_socket.close()
                 self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                self.client_socket.setsockopt(socket.SOL_TCP, socket.SO_KEEPALIVE, 1)
                 self.client_socket.connect((self.ip, self.port))
                 self.connected = True
 
@@ -717,7 +719,7 @@ def center_window(window, width, height):
     window.geometry(f'{width}x{height}+{x}+{y}')
 
 
-def enter_server_info(nickname):
+def enter_server_info():
     server_info_window = ctk.CTk()
     server_info_window.title("Enter Server Info")
     server_info_window.geometry('400x275')
@@ -740,55 +742,126 @@ def enter_server_info(nickname):
         global ip, port_str
         ip = ip_entry.get()
         port_str = port_entry.get()
-        try:
+
+        checking_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Инициализируем настройки сокета
+        checking_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+
+        try: # Проверяем значение порта на валидность
             port = int(port_str)
-            server_info_window.destroy()
-            start_messenger(ip, port, nickname)
         except ValueError:
-            ctk.CTkMessageBox.showerror("Error", "Invalid port number. Please enter a valid number.")
+            CTkMessagebox(title="ERROR", message="Invalid port number. Please enter a valid number.", icon="cancel")
+
+        try:
+            # Проверяем сервер на доступность, если доступен, то прерываем обращения дальше
+            checking_socket.connect((ip, port))
+            checking_socket.close()
+
+            server_info_window.destroy()
+            nickname_enter()
+        except:
+            CTkMessagebox(title="ERROR", message="Сервер не доступен!", icon="cancel")
+
+       
 
     enter_button = ctk.CTkButton(server_info_window, text="Enter", command=on_server_info_enter)
     enter_button.pack(pady=10)
 
     server_info_window.mainloop()
 
-def start_messenger(ip, port, nickname):
-    def non_stop():
-        while True:
-            time.sleep(180)
-            client_socket.send(".".encode('utf-8'))
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-    client_socket.connect((ip, port))
-    client_socket.send(nickname.encode('utf-8'))
-    
-    root = ctk.CTk()
-    app = MessengerApp(root, client_socket, nickname)
-    app.ip = ip
-    app.port = port
+def nickname_enter():
+    global isAuth # Выбор опции авторизация/аутентефикация (1/0)
+    isAuth = 1
 
-    root.mainloop()
-
-if __name__ == "__main__":
     nickname_window = ctk.CTk()
-    nickname_window.title("Enter Nickname")
+    nickname_window.title("AuthWindow")
     nickname_window.geometry('400x275')
+    nickname_window.grid_columnconfigure((0, 1), weight=1)
 
     center_window(nickname_window, 400, 275)
 
-    label = ctk.CTkLabel(nickname_window, text="Введите ваше имя:")
-    label.pack(pady=20)
+    def chosen_auth(): # Нажата кнопка авторизации
+        auth_button.configure(state="disabled")
+        login_button.configure(state="normal")
+        global isAuth
+        isAuth = 1
+    
+    def chosen_login(): # Нажата кнопка аутентефикации
+        auth_button.configure(state="normal")
+        login_button.configure(state="disabled")
+        global isAuth
+        isAuth = 0
+
+    auth_button = ctk.CTkButton(nickname_window, text="Авторизация", command=chosen_auth)
+    auth_button.grid(row=0, column=0, pady=1, sticky="ew")
+    auth_button.configure(state="disabled")
+
+    login_button = ctk.CTkButton(nickname_window, text="Аутентификация", command=chosen_login)
+    login_button.grid(row=0, column=1, pady=1, sticky="ew")
+
+    nickname_label = ctk.CTkLabel(nickname_window, text="Введите логин:")
+    nickname_label.grid(pady=10, columnspan=2)
 
     nickname_entry = ctk.CTkEntry(nickname_window)
-    nickname_entry.pack(pady=10)
+    nickname_entry.grid(pady=10, columnspan=2)
+
+    password_label = ctk.CTkLabel(nickname_window, text="Введите пароль:")
+    password_label.grid(pady=10, columnspan=2)
+
+    password_entry = ctk.CTkEntry(nickname_window)
+    password_entry.grid(pady=10, columnspan=2)
+
+
 
     def on_nickname_enter():
         nickname = nickname_entry.get()
-        if nickname:
-            nickname_window.destroy()
-            enter_server_info(nickname)
+        password = password_entry.get()
 
+        if nickname:
+            try:
+                port = int(port_str)
+
+                # Отправляем запрос на сервер и получаем ответ от него
+                client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Инициализируем настройки сокета
+                client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+
+                try:
+                    # Сначала повторно проверяем сервер на доступность, если доступен, то начинаем передачу данных
+                    client_socket.connect((ip, port))
+                except:
+                    CTkMessagebox(title="ERROR", message="Сервер не доступен!", icon="cancel")
+
+                client_socket.send(f"{nickname};{password};{isAuth}".encode('utf-8'))
+                response = client_socket.recv(3).decode('utf-8') # Получаем статус запроса
+                print(response)
+
+                if response == "200": # Если прошли аутентефикацию
+                    nickname_window.destroy()
+
+                    root = ctk.CTk()
+                    app = MessengerApp(root, client_socket, nickname)
+                    app.ip = ip
+                    app.port = port
+                
+                    root.mainloop()
+                elif response == "201":
+                    CTkMessagebox(title="Server Response", message="Аккаунт успешно авторизирован", icon="check")
+                    client_socket.close()
+
+                elif response == "409":
+                    CTkMessagebox(title="ERROR", message="Пользователь с таким именем уже существует!", icon="warning")
+                    client_socket.close()
+                
+                elif response == "401":
+                    CTkMessagebox(title="ERROR", message="Неверный логин или пароль!", icon="cancel")
+                    client_socket.close()
+
+            except ValueError:
+                CTkMessagebox(title="ERROR", message="Invalid port number. Please enter a valid number.", icon="cancel")
+    
     enter_button = ctk.CTkButton(nickname_window, text="Enter", command=on_nickname_enter)
-    enter_button.pack(pady=10)
+    enter_button.grid(pady=10, columnspan=2)
 
     nickname_window.mainloop()
+
+if __name__ == "__main__":
+    enter_server_info()
