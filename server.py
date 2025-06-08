@@ -61,7 +61,7 @@ def send_system_message(client_socket, message):
 def broadcast_users_list():
     with clients_lock:  # Добавляем блокировку для безопасного доступа к clients
         if clients:
-            users_list = "\nUSERS:" + ",".join([name.strip() for name in clients.values()])
+            users_list = "USERS:" + ",".join([name.strip() for name in clients.values()])
             for client in clients.copy():  # Используем copy() для избежания ошибок при изменении словаря
                 try:
                     send_system_message(client, users_list)
@@ -71,7 +71,7 @@ def broadcast_users_list():
 def update_users_periodically():
     while True:
         broadcast_users_list()
-        time.sleep(60)  # Обновляем каждую минуту
+        time.sleep(1)  # Обновляем каждую секунду
 
 def wrap_message(message, max_width=70):
     """Форматирует сообщение с переносом по словам"""
