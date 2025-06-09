@@ -1298,6 +1298,9 @@ class MessengerApp:
             timestamp_end = message.find('] ') + 2
             timestamp = message[:timestamp_end]
             text = message[timestamp_end:]
+
+            if "присоединился к чату" in text and "USERS:" in text and not is_new:
+                text = text.split("USERS")[0]
             
             if not self.settings['show_seconds'] and timestamp.count(':') == 2:
                 time_parts = timestamp[1:-2].split(':')
