@@ -944,8 +944,13 @@ class MessengerApp:
                 self.show_ban_frame()
                 return
 
-            if initial_response[:4] == "CCT:":
-                self.message_cooldown = int(initial_response[4:])
+            if initial_response[:4] == "CCT:": # Получаем CCT:<время_между_сообщениями>;USERS:<список>,<всех>,<пользователей>
+                response = initial_response[4:].split(";") # Разбиваем на массив из <время_между_сообщениями> и USERS:<список>,<всех>,<пользователей>
+
+                self.message_cooldown = int(response[0]) # устанавливаем <время_между_сообщениями>
+
+                self.init_userlist = [user.strip() for user in response[1][6:].split(",") if user.strip()] # Получаем начальный список пользователей
+
         except Exception as e:
             print(f"Ошибка при инициализации: {e}")
             self.show_ban_frame()
@@ -953,8 +958,6 @@ class MessengerApp:
             
         self.connected = True
         self.unsent_messages = []
-
-        time.sleep(1) # Ожидаем инициализации клиента на сервере
 
         # Если не забанен, создаем интерфейс
         self.master.after(0, self.setup_interface) # Даем время инициализизоваться master интерфейсу, поэтому вызываем через after
@@ -1207,6 +1210,7 @@ class MessengerApp:
         )
         self.notification_label.place(relx=0.01, rely=0.8)
 
+        self.update_users_list(self.init_userlist) # Выводим всех пользователей, которые были при инициализации
         self.apply_saved_settings()
 
     def send_message(self):

@@ -12,14 +12,23 @@ SOCKET_TIMEOUT = 604800
 # clients_lock = Lock()
 clients_lock = Semaphore(2) # Заменил замок на семафор, обеспечивая работу двух потоков одновременно без блокирования данных
 
+global userlist_delay
+userlist_delay = 1 # Время частоты рассылки списков пользователей
+
 def broadcast_locking(function_that_locks): # Декоратор, обеспечивающий блокировку потока отправки, пока сообщение доставляется, не давая другим сообщениям передаться в той же трансляции
     def wrapper(*args, **kwargs):
         global broadcast_lock # Замок на трансляцию пользователю сообщений
+        global userlist_delay # Время частоты рассылки списков пользователей
+
         broadcast_lock = True
-        time.sleep(0.25) # Чтобы не смешаться с отправленным сообщением
+        userlist_delay = 2.5
+
+        time.sleep(0.1) # Чтобы не смешаться с отправленным сообщением
         function_that_locks(*args, **kwargs)
-        time.sleep(0.25) # Чтобы сообщение после не смешалось с нашим
+        time.sleep(0.1) # Чтобы сообщение после не смешалось с нашим
+
         broadcast_lock = False
+        userlist_delay = 1
 
     return wrapper
 
@@ -89,11 +98,9 @@ def update_users_periodically():
     broadcast_lock = False
 
     while True:
-        time.sleep(1)  # Обновляем каждую секунду
+        time.sleep(userlist_delay)  # Ждем согласно указанному времени ожидания
         if not broadcast_lock:
             broadcast_users_list()
-        else:
-            time.sleep(1) # Ещё одну секунду чтобы не попасть в поток после трансляции
 
 def wrap_message(message, max_width=70):
     """Форматирует сообщение с переносом по словам"""
@@ -143,7 +150,7 @@ def wrap_message(message, max_width=70):
 def handle_client(client_socket, addr):
     """Обработка клиента"""
 
-    cooldown_time = 3 # Указываем время кулдауна между сообщениями
+    message_cooldown = 3 # Указываем время кулдауна между сообщениями
 
     try:
         # Устанавливаем таймаут для сокета
@@ -184,8 +191,9 @@ def handle_client(client_socket, addr):
                 
             # Добавление клиента
             clients[client_socket] = nickname
-
-        send_system_message(client_socket, f"CCT:{cooldown_time}") # Отправляем время кд между сообщениями
+            
+            users_list = "USERS:" + ",".join([name.strip() for name in clients.values()]) # Получаем список пользователей
+            send_system_message(client_socket, f"CCT:{message_cooldown};{users_list}") # Отправляем время кд между сообщениями и список пользователей
 
         # Обновляем GUI в главном потоке
         if server_gui:
@@ -194,7 +202,7 @@ def handle_client(client_socket, addr):
 
         # Даем клиенту время на инициализацию
         time.sleep(0.1)
-        
+
         # Отправляем историю частями
         if messages:
             chunk_size = 10  # Отправляем по 10 сообщений
@@ -222,7 +230,6 @@ def handle_client(client_socket, addr):
 
         # Начинаем обработку сообщений
         last_message_time = 0
-        message_cooldown = 3
         max_message_length = 300
         
         while True:
