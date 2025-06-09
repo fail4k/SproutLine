@@ -1,16 +1,15 @@
+import hashlib
 import customtkinter as ctk
 import socket
 import threading
 import time
-from PIL import Image, ImageDraw, ImageTk
+from PIL import Image
 from customtkinter import CTkImage
 import json
 import tkinter.messagebox as messagebox
 import os
-import tkinter as tk
 import ctypes as ct
 import urllib.request
-from tkinter import filedialog
 import random
 import sys
 
@@ -259,7 +258,7 @@ class RegistrationWindow:
             with open(os.path.join("assets", "config", "user_data.json"), "w") as f:
                 json.dump({
                     "nickname": nickname,
-                    "password": password,  # В реальном приложении нужно хешировать
+                    "password": hashlib.sha256(password.encode("utf-8")).hexdigest(),  # В реальном приложении нужно хешировать
                     "user_id": user_id  # ID из 9 цифр
                 }, f)
             self.root.destroy()
@@ -527,6 +526,7 @@ class ServerListWindow:
             
             # Пытаемся подключиться к серверу
             client_socket.connect((server['ip'], int(server['port'])))
+            
             
             # Закрываем окно списка серверов
             self.root.destroy()
@@ -943,6 +943,9 @@ class MessengerApp:
             if initial_response == "ERROR:BANNED":
                 self.show_ban_frame()
                 return
+
+            if initial_response[:4] == "CCT:":
+                self.message_cooldown = int(initial_response[4:])
         except Exception as e:
             print(f"Ошибка при инициализации: {e}")
             self.show_ban_frame()
@@ -950,6 +953,8 @@ class MessengerApp:
             
         self.connected = True
         self.unsent_messages = []
+
+        time.sleep(1) # Ожидаем инициализации клиента на сервере
 
         # Если не забанен, создаем интерфейс
         self.master.after(0, self.setup_interface) # Даем время инициализизоваться master интерфейсу, поэтому вызываем через after
@@ -1192,7 +1197,6 @@ class MessengerApp:
         self.keep_alive_thread.start()
 
         self.last_message_time = 0
-        self.message_cooldown = 3
         self.max_message_length = 300
         
         self.notification_label = ctk.CTkLabel(
@@ -1245,7 +1249,7 @@ class MessengerApp:
         while True:
             try:
                 message = self.client_socket.recv(2048).decode('utf-8')
-                
+
                 if message == "ERROR:BANNED":
                     self.master.after(0, self.show_ban_frame)
                     break
@@ -1253,9 +1257,21 @@ class MessengerApp:
                     self.master.destroy()
                     break
                 elif message.startswith("USERS:"):
-                    users = [user.strip() for user in message[6:].split(",") if user.strip()]
-                    self.update_users_list(users)
-                    continue
+                    if "HISTORY:" in message:
+                        message_list = message.split("HISTORY:")[1:]
+                        
+                        message = "\n".join(message_list)
+
+                        history_messages = message.split("\n")
+                        for msg in history_messages:
+                            if msg.strip() and not msg.startswith(("USERS:", "users:")):
+                                self.display_message(msg.strip(), is_new=False)
+                        
+                        continue
+                    else:
+                        users = [user.strip() for user in message[6:].split(",") if user.strip()]
+                        self.update_users_list(users)
+                        continue
                 elif message.startswith("HISTORY:"):
                     message_list = message.split("HISTORY:") # Избавляемся от всех заголовков History
                     
@@ -1265,6 +1281,7 @@ class MessengerApp:
                     for msg in history_messages:
                         if msg.strip() and not msg.startswith(("USERS:", "users:")):
                             self.display_message(msg.strip(), is_new=False)
+
                     continue
                 elif message.strip():  # Проверяем, что сообщение не пустое
                     self.display_message(message)
@@ -1299,8 +1316,8 @@ class MessengerApp:
             timestamp = message[:timestamp_end]
             text = message[timestamp_end:]
 
-            if "присоединился к чату" in text and "USERS:" in text and not is_new:
-                text = text.split("USERS")[0]
+            if "USERS:" in text and not is_new:
+                text = text.split("USERS:")[0]
             
             if not self.settings['show_seconds'] and timestamp.count(':') == 2:
                 time_parts = timestamp[1:-2].split(':')

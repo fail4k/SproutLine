@@ -12,6 +12,17 @@ SOCKET_TIMEOUT = 604800
 # clients_lock = Lock()
 clients_lock = Semaphore(2) # Заменил замок на семафор, обеспечивая работу двух потоков одновременно без блокирования данных
 
+def broadcast_locking(function_that_locks): # Декоратор, обеспечивающий блокировку потока отправки, пока сообщение доставляется, не давая другим сообщениям передаться в той же трансляции
+    def wrapper(*args, **kwargs):
+        global broadcast_lock # Замок на трансляцию пользователю сообщений
+        broadcast_lock = True
+        time.sleep(0.25) # Чтобы не смешаться с отправленным сообщением
+        function_that_locks(*args, **kwargs)
+        time.sleep(0.25) # Чтобы сообщение после не смешалось с нашим
+        broadcast_lock = False
+
+    return wrapper
+
 clients = {}  # Словарь {сокет: никнейм}
 messages = []
 
@@ -21,10 +32,13 @@ server_gui = None  # Ссылка на GUI сервера
 banned_ips = set()  # Множество забаненных IP-адресов
 banned_users_ips = {}  # {nickname: ip_address}
 
+
 def get_current_time():
     return datetime.now().strftime("%H:%M:%S")
 
+@broadcast_locking
 def broadcast_message(message, sender_conn):
+
     def do_broadcast():
         with clients_lock:
             disconnected_clients = []
@@ -51,6 +65,7 @@ def broadcast_message(message, sender_conn):
     if server_gui:
         server_gui.root.after(100, server_gui.update_chat_history)
 
+@broadcast_locking
 def send_system_message(client_socket, message):
     """Отправка системного сообщения клиенту"""
     try:
@@ -64,14 +79,21 @@ def broadcast_users_list():
             users_list = "USERS:" + ",".join([name.strip() for name in clients.values()])
             for client in clients.copy():  # Используем copy() для избежания ошибок при изменении словаря
                 try:
-                    send_system_message(client, users_list)
-                except Exception:
+                    client.send(users_list.encode('utf-8'))
+                except Exception as e:
+                    print(f"Ошибка отправки системного сообщения со списком пользователей: {e}")
                     remove(client)
 
 def update_users_periodically():
+    global broadcast_lock 
+    broadcast_lock = False
+
     while True:
-        broadcast_users_list()
         time.sleep(1)  # Обновляем каждую секунду
+        if not broadcast_lock:
+            broadcast_users_list()
+        else:
+            time.sleep(1) # Ещё одну секунду чтобы не попасть в поток после трансляции
 
 def wrap_message(message, max_width=70):
     """Форматирует сообщение с переносом по словам"""
@@ -120,6 +142,9 @@ def wrap_message(message, max_width=70):
 
 def handle_client(client_socket, addr):
     """Обработка клиента"""
+
+    cooldown_time = 3 # Указываем время кулдауна между сообщениями
+
     try:
         # Устанавливаем таймаут для сокета
         client_socket.settimeout(5.0)  # 5 секунд для начальной авторизации
@@ -160,32 +185,40 @@ def handle_client(client_socket, addr):
             # Добавление клиента
             clients[client_socket] = nickname
 
-        
-        # Отправляем сообщение о подключении
-        connect_message = f"[{get_current_time()}] {nickname} присоединился к чату"
-        messages.append(connect_message)
-        broadcast_message(connect_message + "\n", None)
+        send_system_message(client_socket, f"CCT:{cooldown_time}") # Отправляем время кд между сообщениями
 
         # Обновляем GUI в главном потоке
         if server_gui:
             server_gui.root.after(0, server_gui.update_users_list)
             server_gui.root.after(0, server_gui.update_chat_history)
-        
+
         # Даем клиенту время на инициализацию
         time.sleep(0.1)
         
         # Отправляем историю частями
         if messages:
             chunk_size = 10  # Отправляем по 10 сообщений
-            for i in range(0, len(messages), chunk_size):
-                chunk = messages[i:i + chunk_size]
-                history_message = "HISTORY:" + "\n".join(chunk)
-                try:
-                    client_socket.send(history_message.encode('utf-8'))
-                    time.sleep(0.1)  # Небольшая пауза между чанками
-                except Exception as e:
-                    print(f"Ошибка при отправке истории: {str(e)}")
-                    return
+
+            @broadcast_locking
+            def send_history(messages, chunk_size): # Создаем блокирующуя функцию отправки истории
+                for i in range(0, len(messages), chunk_size):
+                    chunk = messages[i:i + chunk_size]
+                    history_message = "HISTORY:" + "\n".join(chunk) + "\n"
+                    try:
+                        client_socket.send(history_message.encode('utf-8'))
+                        time.sleep(0.1)  # Небольшая пауза между чанками
+
+                    except Exception as e:
+                        print(f"Ошибка при отправке истории: {str(e)}")
+                        return
+
+            
+            send_history(messages, chunk_size)
+        
+        # Отправляем сообщение о подключении
+        connect_message = f"[{get_current_time()}] {nickname} присоединился к чату"
+        messages.append(connect_message)
+        broadcast_message(connect_message + "\n", None)
 
         # Начинаем обработку сообщений
         last_message_time = 0
