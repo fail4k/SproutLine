@@ -1,3 +1,4 @@
+import hashlib
 import socket
 import threading
 import time
@@ -6,11 +7,41 @@ import sys
 from datetime import datetime
 from threading import Lock, Semaphore
 import customtkinter as ctk
+import sqlite3
+connection = sqlite3.connect('testDB.db', check_same_thread=False) # Грузим БД из файла
+cursor = connection.cursor() # Курсор - интерфейс взаимодействия с БД
+
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS Users (
+username TEXT PRIMARY KEY,
+password TEXT NOT NULL
+)
+''') # Создаем таблицу пользователей, ник у каждого уникальный, поэтому задается как ключ, защита от создания существующего пользователя на уровне БД
 
 MAX_NICKNAME_LENGTH = 20
 SOCKET_TIMEOUT = 604800
 # clients_lock = Lock()
 clients_lock = Semaphore(2) # Заменил замок на семафор, обеспечивая работу двух потоков одновременно без блокирования данных
+
+global userlist_delay
+userlist_delay = 1 # Время частоты рассылки списков пользователей
+
+def broadcast_locking(function_that_locks): # Декоратор, обеспечивающий блокировку потока отправки, пока сообщение доставляется, не давая другим сообщениям передаться в той же трансляции
+    def wrapper(*args, **kwargs):
+        global broadcast_lock # Замок на трансляцию пользователю сообщений
+        global userlist_delay # Время частоты рассылки списков пользователей
+
+        broadcast_lock = True
+        userlist_delay = 5
+
+        time.sleep(0.1) # Чтобы не смешаться с отправленным сообщением
+        function_that_locks(*args, **kwargs)
+        time.sleep(0.1) # Чтобы сообщение после не смешалось с нашим
+
+        broadcast_lock = False
+        userlist_delay = 1
+
+    return wrapper
 
 clients = {}  # Словарь {сокет: никнейм}
 messages = []
@@ -21,10 +52,13 @@ server_gui = None  # Ссылка на GUI сервера
 banned_ips = set()  # Множество забаненных IP-адресов
 banned_users_ips = {}  # {nickname: ip_address}
 
+
 def get_current_time():
     return datetime.now().strftime("%H:%M:%S")
 
+@broadcast_locking
 def broadcast_message(message, sender_conn):
+
     def do_broadcast():
         with clients_lock:
             disconnected_clients = []
@@ -51,6 +85,7 @@ def broadcast_message(message, sender_conn):
     if server_gui:
         server_gui.root.after(100, server_gui.update_chat_history)
 
+@broadcast_locking
 def send_system_message(client_socket, message):
     """Отправка системного сообщения клиенту"""
     try:
@@ -61,17 +96,22 @@ def send_system_message(client_socket, message):
 def broadcast_users_list():
     with clients_lock:  # Добавляем блокировку для безопасного доступа к clients
         if clients:
-            users_list = "\nUSERS:" + ",".join([name.strip() for name in clients.values()])
+            users_list = "USERS:" + ",".join([name.strip() for name in clients.values()])
             for client in clients.copy():  # Используем copy() для избежания ошибок при изменении словаря
                 try:
-                    send_system_message(client, users_list)
-                except Exception:
+                    client.send(users_list.encode('utf-8'))
+                except Exception as e:
+                    print(f"Ошибка отправки системного сообщения со списком пользователей: {e}")
                     remove(client)
 
 def update_users_periodically():
+    global broadcast_lock 
+    broadcast_lock = False
+
     while True:
-        broadcast_users_list()
-        time.sleep(60)  # Обновляем каждую минуту
+        time.sleep(userlist_delay)  # Ждем согласно указанному времени ожидания
+        if not broadcast_lock:
+            broadcast_users_list()
 
 def wrap_message(message, max_width=70):
     """Форматирует сообщение с переносом по словам"""
@@ -118,8 +158,37 @@ def wrap_message(message, max_width=70):
 
     return result
 
+def check_user_exists_db(username):
+    """Проверяем: есть ли уже такой пользователь в БД"""
+
+    try:
+        cursor.execute('SELECT * FROM Users WHERE username = ?', (username,))
+        user = cursor.fetchone()
+        return True if user else False
+    except Exception as e:
+        print("Ошибка базы данных: ", e)
+
+def auth_db(username, password):
+    """Проводим аутентефикацию пользователя"""
+
+    try:
+        cursor.execute('SELECT * FROM Users WHERE username = ?', (username,))
+        user = cursor.fetchone()
+        if user:
+            if user[1] == password:
+                return True
+            else:
+                return False
+        else:
+            return False
+    except Exception as e:
+        print("Ошибка базы данных: ", e)
+
 def handle_client(client_socket, addr):
     """Обработка клиента"""
+
+    message_cooldown = 3 # Указываем время кулдауна между сообщениями
+
     try:
         # Устанавливаем таймаут для сокета
         client_socket.settimeout(5.0)  # 5 секунд для начальной авторизации
@@ -134,62 +203,99 @@ def handle_client(client_socket, addr):
             return
         
         try: 
-            nickname = client_socket.recv(1024).decode('utf-8').strip()
+            init_message = client_socket.recv(1024).decode('utf-8').strip() # Получаем инициализационное сообщение от пользвоателя по следующему контракту: <тип операции (регистрация или вход в аккаунт)><имя_пользователя>;<пароль>
+            operation_type = init_message.split(";")[0]
+            nickname = init_message.split(";")[1]
+            password = hashlib.sha256(init_message.split(";")[2].encode("utf-8")).hexdigest()
+
+            if operation_type == "R": # Регистрация
+                if check_user_exists_db(nickname) == False: # Только если позователя нет
+
+                    cursor.execute('INSERT INTO Users (username, password) VALUES (?, ?)', (nickname, password,)) # Добавляем нашего пользователя
+                    connection.commit() # Применяем изменения в БД
+                    print("Добавлен пользователь: ", nickname)
+                else:
+                    print(f"Пользователь {nickname} уже существует")
+                    send_system_message(client_socket, "ERROR:NICKNAME_TAKEN")
+                    client_socket.close()
+
+            elif operation_type == "L": # Вход в аккаунт
+                print("Login?")
+                
+                if not auth_db(nickname, password):
+                    print(f"Пользователь {nickname} не прошёл аутентефикацию")
+                    send_system_message(client_socket, "ERROR:WRONG_PASSWORD")
+                    client_socket.close()
+
+            else:
+                send_system_message(client_socket, "ERROR:WRONG_OPERATION")
+                client_socket.close()
+
+            # Проверка на на онлайн: если аккаунт уже в чате, но с ещё одного входа не пустит
+            with clients_lock:
+                if nickname in clients.values() or nickname in banned_users:
+                    try:
+                        send_system_message(client_socket, "ERROR:NICKNAME_ONLINE")
+                    except:
+                        pass
+
+                    client_socket.close()
+                    return
+                    
+                # Добавление клиента
+                clients[client_socket] = nickname
+                
+                users_list = "USERS:" + ",".join([name.strip() for name in clients.values()]) # Получаем список пользователей
+                send_system_message(client_socket, f"CCT:{message_cooldown};{users_list}") # Отправляем время кд между сообщениями и список пользователей
+
+
         except socket.timeout:
+            print("Ошибка подключения пользователя: ", "вышло время ожидангия сокета")
             client_socket.close()
             return
-        except:
+        except Exception as e:
+            print("Ошибка подключения пользователя: ", e)
             client_socket.close()
             return
             
         # После получения никнейма устанавливаем больший таймаут
         client_socket.settimeout(30.0)  # 30 секунд для основной работы
-        
 
-        # Проверка на занятый никнейм
-        with clients_lock:
-            if nickname in clients.values() or nickname in banned_users:
-                try:
-                    send_system_message(client_socket, "ERROR:NICKNAME_TAKEN")
-                except:
-                    pass
+        # Обновляем GUI в главном потоке
+        if server_gui:
+            server_gui.root.after(0, server_gui.update_users_list)
+            server_gui.root.after(0, server_gui.update_chat_history)
 
-                client_socket.close()
-                return
-                
-            # Добавление клиента
-            clients[client_socket] = nickname
+        # Даем клиенту время на инициализацию
+        time.sleep(0.1)
 
+        # Отправляем историю частями
+        if messages:
+            chunk_size = 10  # Отправляем по 10 сообщений
+
+            @broadcast_locking
+            def send_history(messages, chunk_size): # Создаем блокирующуя функцию отправки истории
+                for i in range(0, len(messages), chunk_size):
+                    chunk = messages[i:i + chunk_size]
+                    history_message = "HISTORY:" + "\n".join(chunk) + "\n"
+                    try:
+                        client_socket.send(history_message.encode('utf-8'))
+                        time.sleep(0.1)  # Небольшая пауза между чанками
+
+                    except Exception as e:
+                        print(f"Ошибка при отправке истории: {str(e)}")
+                        return
+
+            
+            send_history(messages, chunk_size)
         
         # Отправляем сообщение о подключении
         connect_message = f"[{get_current_time()}] {nickname} присоединился к чату"
         messages.append(connect_message)
         broadcast_message(connect_message + "\n", None)
 
-        # Обновляем GUI в главном потоке
-        if server_gui:
-            server_gui.root.after(0, server_gui.update_users_list)
-            server_gui.root.after(0, server_gui.update_chat_history)
-        
-        # Даем клиенту время на инициализацию
-        time.sleep(0.1)
-        
-        # Отправляем историю частями
-        if messages:
-            chunk_size = 10  # Отправляем по 10 сообщений
-            for i in range(0, len(messages), chunk_size):
-                chunk = messages[i:i + chunk_size]
-                history_message = "HISTORY:" + "\n".join(chunk)
-                try:
-                    client_socket.send(history_message.encode('utf-8'))
-                    time.sleep(0.1)  # Небольшая пауза между чанками
-                except Exception as e:
-                    print(f"Ошибка при отправке истории: {str(e)}")
-                    return
-
         # Начинаем обработку сообщений
         last_message_time = 0
-        message_cooldown = 3
         max_message_length = 300
         
         while True:

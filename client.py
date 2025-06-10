@@ -2,15 +2,13 @@ import customtkinter as ctk
 import socket
 import threading
 import time
-from PIL import Image, ImageDraw, ImageTk
+from PIL import Image
 from customtkinter import CTkImage
 import json
 import tkinter.messagebox as messagebox
 import os
-import tkinter as tk
 import ctypes as ct
 import urllib.request
-from tkinter import filedialog
 import random
 import sys
 
@@ -90,12 +88,15 @@ class LicenseAgreementWindow:
     def close_dialog(self):
         self.dialog.destroy()
 
-class RegistrationWindow:
-    def __init__(self):
+class InputWindow:
+    def __init__(self, server, error=""):
         self.root = ctk.CTk()
         self.root.title("Регистрация SproutLine")
         self.root.geometry("700x450")
         self.root.resizable(False, False)
+        self.server = server
+        self.error = error
+        self.isRegister = True # По умолчанию открывается окно регистрации
         
         # Центрируем окно
         center_window(self.root, 700, 450)
@@ -110,7 +111,7 @@ class RegistrationWindow:
         
         # Заголовок
         self.title_frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
-        self.title_frame.pack(pady=(15, 20))
+        self.title_frame.pack(pady=(12.5, 12.5))
         
         self.title_label = ctk.CTkLabel(
             self.title_frame,
@@ -127,6 +128,19 @@ class RegistrationWindow:
             text_color="#888888"
         )
         self.subtitle_label.pack()
+
+        # Кнопка смены регистрации на вход
+        self.change_type_button = ctk.CTkButton(
+            self.title_frame,
+            fg_color="transparent",
+            text="Или войдите в существующий",
+            corner_radius=7.5,
+            hover_color="#2D2D2D",
+            font=("Arial", 12),
+            text_color="#00ccff",
+            command=self.change_type_of_window
+        )
+        self.change_type_button.pack()
         
         # Поля ввода в отдельном фрейме
         self.inputs_frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
@@ -143,9 +157,11 @@ class RegistrationWindow:
             height=entry_height,
             font=("Arial", 13),
             fg_color="#2A2A2A",
+            text_color="#FFFFFF",
             border_color="#00ff88",
             corner_radius=8
         )
+        
         self.nickname_entry.pack(pady=6)
         
         self.password_entry = ctk.CTkEntry(
@@ -156,6 +172,7 @@ class RegistrationWindow:
             height=entry_height,
             font=("Arial", 13),
             fg_color="#2A2A2A",
+            text_color="#FFFFFF",
             border_color="#00ff88",
             corner_radius=8
         )
@@ -169,6 +186,7 @@ class RegistrationWindow:
             height=entry_height,
             font=("Arial", 13),
             fg_color="#2A2A2A",
+            text_color="#FFFFFF",
             border_color="#00ff88",
             corner_radius=8
         )
@@ -176,7 +194,7 @@ class RegistrationWindow:
         
         # Лицензионное соглашение
         self.agreement_frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
-        self.agreement_frame.pack(pady=8)
+        self.agreement_frame.pack(pady=6)
         
         self.agreement_var = ctk.BooleanVar()
         self.agreement_checkbox = ctk.CTkCheckBox(
@@ -187,7 +205,8 @@ class RegistrationWindow:
             checkbox_height=18,
             font=("Arial", 12),
             fg_color="#00ff88",
-            hover_color="#00cc6a"
+            hover_color="#00cc6a",
+            text_color="#888888"
         )
         self.agreement_checkbox.pack(side="left")
         
@@ -202,8 +221,8 @@ class RegistrationWindow:
         )
         self.agreement_button.pack(side="left")
         
-        # Кнопка регистрации
-        self.register_button = ctk.CTkButton(
+        # Кнопка ввода
+        self.input_button = ctk.CTkButton(
             self.content_frame,
             text="Зарегистрироваться",
             width=250,
@@ -213,25 +232,77 @@ class RegistrationWindow:
             text_color="#000000",
             hover_color="#00cc6a",
             corner_radius=8,
-            command=self.register
+            command=self.inputFunc
         )
-        self.register_button.pack(pady=10)
+        self.input_button.pack(pady=10)
+
+        # Кнопка возврата к выбору верверов
+        self.return_button = ctk.CTkButton(
+            self.content_frame,
+            text="Вернуться к выбору серверов",
+            width=150,
+            height=20,
+            font=("Arial Bold", 12),
+            fg_color="#1A1A1A",
+            hover_color="#212121",
+            text_color="#00ff88",
+            corner_radius=7.5,
+            command=self.return_to_server_choose
+        )
+        self.return_button.pack()
         
         # Сообщение об ошибке
         self.error_label = ctk.CTkLabel(
             self.content_frame,
-            text="",
+            text=self.error,
             text_color="#ff3333",
             font=("Arial", 12)
         )
         self.error_label.pack()
+
+        try: # По умолчанию делаем регистрацию, если был недавний вход - покажется окно входе с прошлым ником входа, если нет - регистрация
+            with open(os.path.join("assets", "config", "user_data.json"), "r") as f:
+                user_data = json.load(f)
+            
+            if user_data:
+                if user_data[self.server["server_id"]]:
+                    if user_data[self.server["server_id"]]["nickname"]:
+                        self.nickname_entry.insert(0, user_data[self.server["server_id"]]["nickname"])
+                        self.change_type_of_window()
+
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass # Если файла не оказалось - ничего страшного, при первом заходе он создастся
         
         self.root.mainloop()
+
+    def change_type_of_window(self):
+        if self.isRegister:
+            self.root.title(f"Вход в аккаунт SproutLine")
+            self.title_label.configure(text="Вход в аккаунт")
+            self.subtitle_label.configure(text="Войдите в аккаунт для продолжения общения")
+            self.change_type_button.configure(text="Или создайте новый")
+            self.confirm_password_entry.pack_forget()
+            self.input_button.configure(text="Войти в аккаунт")
+            self.isRegister = False
+        else:
+            self.root.title(f"Регистрация SproutLine")
+            self.title_label.configure(text="Регистрация")
+            self.subtitle_label.configure(text="Создайте аккаунт для начала общения")
+            self.change_type_button.configure(text="Или войдите в существующий")
+            self.nickname_entry.delete(0, "end")
+            self.nickname_entry.configure(placeholder_text="Никнейм")
+            self.confirm_password_entry.pack(pady=6)
+            self.input_button.configure(text="Зарегистрироваться")
+            self.isRegister = True
         
     def show_license(self):
         LicenseAgreementWindow(self.root)
+
+    def return_to_server_choose(self):
+        self.root.destroy()
+        ServerListWindow()
     
-    def register(self):
+    def inputFunc(self): # То, что будет происходить после нажатия кнопки ввода
         nickname = self.nickname_entry.get().strip()
         password = self.password_entry.get()
         confirm_password = self.confirm_password_entry.get()
@@ -240,30 +311,52 @@ class RegistrationWindow:
             self.error_label.configure(text="Заполните все поля")
             return
             
-        if password != confirm_password:
+        if password != confirm_password and self.isRegister:
             self.error_label.configure(text="Пароли не совпадают")
             return
             
         if not self.agreement_var.get():
             self.error_label.configure(text="Примите лицензионное соглашение")
             return
-            
-        # Генерируем уникальный ID на основе никнейма
-        seed = sum(ord(c) for c in nickname)
-        random.seed(seed)
-        user_id = ''.join([str(random.randint(0, 9)) for _ in range(9)])
-        random.seed()  # Сбрасываем seed
+        
+        # # Генерируем уникальный ID на основе никнейма
+        # seed = sum(ord(c) for c in nickname)
+        # random.seed(seed)
+        # user_id = ''.join([str(random.randint(0, 9)) for _ in range(9)])
+        # random.seed()  # Сбрасываем seed
             
         # Сохраняем данные
         try:
-            with open(os.path.join("assets", "config", "user_data.json"), "w") as f:
-                json.dump({
-                    "nickname": nickname,
-                    "password": password,  # В реальном приложении нужно хешировать
-                    "user_id": user_id  # ID из 9 цифр
+            with open(os.path.join("assets", "config", "user_data.json"), "w") as f: # Сохраняем данные об отправке данных
+                json.dump(
+                {
+                    self.server["server_id"]: {
+                        "nickname": nickname,
+                        }
+                        
                 }, f)
-            self.root.destroy()
-            ServerListWindow()
+
+            try:
+                # Создаем сокет и устанавливаем параметры
+                client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                
+                # Пытаемся подключиться к серверу
+                client_socket.connect((self.server['ip'], int(self.server['port'])))
+                
+                # Закрываем окно списка серверов
+                self.root.destroy()
+                
+                # Создаем окно мессенджера
+
+                # Создаем экземпляр мессенджера
+                MessengerApp(self.server, client_socket, nickname, password, self.isRegister)
+                
+                
+                
+            except Exception as e:
+                messagebox.showerror("Ошибка подключения", f"Не удалось подключиться к серверу: {str(e)}")
+
         except Exception as e:
             self.error_label.configure(text=f"Ошибка регистрации: {str(e)}")
 
@@ -287,18 +380,18 @@ class ServerListWindow:
         self.main_frame = ctk.CTkFrame(self.root, fg_color="#1A1A1A")
         self.main_frame.pack(fill="both", expand=True)
         
-        # Кнопка выхода из аккаунта
-        self.logout_button = ctk.CTkButton(
-            self.main_frame,
-            text="Выйти из аккаунта",
-            width=120,
-            font=("Arial Bold", 12),
-            fg_color="#1E1E1E",
-            hover_color="#2D2D2D",
-            text_color="#ff3333",
-            command=self.logout
-        )
-        self.logout_button.place(relx=0.05, rely=0.05)
+        # # Кнопка выхода из аккаунта
+        # self.logout_button = ctk.CTkButton(
+        #     self.main_frame,
+        #     text="Выйти из аккаунта",
+        #     width=120,
+        #     font=("Arial Bold", 12),
+        #     fg_color="#1E1E1E",
+        #     hover_color="#2D2D2D",
+        #     text_color="#ff3333",
+        #     command=self.logout
+        # )
+        # self.logout_button.place(relx=0.05, rely=0.05)
         
         # Заголовок
         self.title_label = ctk.CTkLabel(
@@ -369,17 +462,17 @@ class ServerListWindow:
         self.delete_button.pack(side="left", padx=10)
         
         # Добавляем кнопку профиля в правом верхнем углу
-        self.profile_button = ctk.CTkButton(
-            self.main_frame,
-            text="Профиль",
-            width=120,
-            font=("Arial Bold", 12),
-            fg_color="#1E1E1E",
-            hover_color="#2D2D2D",
-            text_color="#00ff88",
-            command=self.show_profile
-        )
-        self.profile_button.place(relx=0.83, rely=0.05)
+        # self.profile_button = ctk.CTkButton(
+        #     self.main_frame,
+        #     text="Профиль",
+        #     width=120,
+        #     font=("Arial Bold", 12),
+        #     fg_color="#1E1E1E",
+        #     hover_color="#2D2D2D",
+        #     text_color="#00ff88",
+        #     command=self.show_profile
+        # )
+        # self.profile_button.place(relx=0.83, rely=0.05)
         
         self.root.mainloop()
         
@@ -520,35 +613,9 @@ class ServerListWindow:
         
     def connect_to_server(self, server):
         """Подключение к выбранному серверу"""
-        try:
-            # Создаем сокет и устанавливаем параметры
-            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-            
-            # Пытаемся подключиться к серверу
-            client_socket.connect((server['ip'], int(server['port'])))
-            
-            # Закрываем окно списка серверов
-            self.root.destroy()
-            
-            # Создаем окно мессенджера
-            root = ctk.CTk()
-            
-            # Загружаем данные пользователя
-            with open(os.path.join("assets", "config", "user_data.json"), "r") as f:
-                user_data = json.load(f)
-                nickname = user_data["nickname"]
-
-            # Создаем экземпляр мессенджера
-            app = MessengerApp(root, client_socket, nickname)
-            app.ip = server['ip']
-            app.port = int(server['port'])
-            
-            # Запускаем главный цикл
-            root.mainloop()
-            
-        except Exception as e:
-            messagebox.showerror("Ошибка подключения", f"Не удалось подключиться к серверу: {str(e)}")
+        self.root.destroy() 
+        InputWindow(server)
+        
 
     def logout(self):
         """Выход из аккаунта"""
@@ -560,7 +627,7 @@ class ServerListWindow:
                 
                 # Закрываем текущее окно и открываем окно регистрации
                 self.root.destroy()
-                RegistrationWindow()
+                InputWindow()
             except Exception as e:
                 messagebox.showerror("Ошибка", f"Не удалось выйти из аккаунта: {str(e)}")
 
@@ -838,10 +905,17 @@ class ServerDialog:
         
     def on_ok(self):
         """Обработчик нажатия кнопки OK"""
+        # Генерируем уникальный ID на основе названия сервера. ID используется только на стороне клиента
+        seed = sum(ord(c) for c in self.name_entry.get())
+        random.seed(seed)
+        server_id = ''.join([str(random.randint(0, 9)) for _ in range(9)])
+        random.seed()  # Сбрасываем seed
+
         self.result = {
             "name": self.name_entry.get(),
             "ip": self.ip_entry.get(),
-            "port": self.port_entry.get()
+            "port": self.port_entry.get(),
+            "server_id": server_id
         }
         self.dialog.destroy()
         
@@ -915,54 +989,92 @@ def check_internet_connection():
         return False
 
 class MessengerApp:
-    def __init__(self, master, client_socket, nickname):
-        self.master = master
+    def __init__(self, server, client_socket, nickname, password, isRegister):
+        # Создаем окно мессенджера
+        self.root = ctk.CTk()
+
         self.client_socket = client_socket
         self.nickname = nickname
+        self.password = password
+        self.server = server
+        self.ip = server['ip']
+        self.port = int(server['port'])
+        self.isRegister = "R" if isRegister else "L" # Устанавливаем вид деятельности: регистрация или вход в аккаунт
         
         # Устанавливаем размеры окна
         window_width = 700
         window_height = 350
         
         # Получаем размеры экрана
-        screen_width = master.winfo_screenwidth()
-        screen_height = master.winfo_screenheight()
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
         
         # Рассчитываем позицию для центрирования
         x = (screen_width // 2) - (window_width // 2)
         y = (screen_height // 2) - (window_height // 2)
         
         # Устанавливаем размеры и позицию окна
-        master.geometry(f'{window_width}x{window_height}+{x}+{y}')
+        self.root.geometry(f'{window_width}x{window_height}+{x}+{y}')
         
         # Сначала отправляем никнейм
         try:
-            client_socket.send(nickname.encode('utf-8'))
+            client_socket.send(f"{self.isRegister};{nickname};{password}".encode('utf-8')) # Отправляем инициализационный запрос. Контракт выглядит следующим образом: <тип операции (регистрация или вход в аккаунт)><имя_пользователя>;<пароль>
             # Ждем ответ от сервера
             initial_response = client_socket.recv(1024).decode('utf-8')
+
             if initial_response == "ERROR:BANNED":
                 self.show_ban_frame()
                 return
+            
+            if initial_response == "ERROR:NICKNAME_TAKEN":
+                self.root.destroy()
+                InputWindow(self.server, error="Пользователь с таким именем уже существует")
+                return
+
+            if initial_response == "ERROR:NICKNAME_ONLINE":
+                self.root.destroy()
+                InputWindow(self.server, error="Пользователь с таким именем в данный момент находится в чате")
+                return
+            
+            if initial_response == "ERROR:WRONG_PASSWORD":
+                self.root.destroy()
+                InputWindow(self.server, error="Неверный пароль")
+                return
+            
+            if initial_response == "ERROR:WRONG_OPERATION":
+                self.root.destroy()
+                InputWindow(self.server, error="Неверная операция, ошибка приложения")
+                return
+
+            if initial_response[:4] == "CCT:": # Получаем CCT:<время_между_сообщениями>;USERS:<список>,<всех>,<пользователей>
+                response = initial_response[4:].split(";") # Разбиваем на массив из <время_между_сообщениями> и USERS:<список>,<всех>,<пользователей>
+
+                self.message_cooldown = int(response[0]) # устанавливаем <время_между_сообщениями>
+
+                self.init_userlist = [user.strip() for user in response[1][6:].split(",") if user.strip()] # Получаем начальный список пользователей
+
         except Exception as e:
-            print(f"Ошибка при инициализации: {e}")
-            self.show_ban_frame()
+            messagebox.showerror("Ошибка", f"Ошибка при инициализации: {e}")
             return
             
         self.connected = True
         self.unsent_messages = []
 
         # Если не забанен, создаем интерфейс
-        self.master.after(0, self.setup_interface) # Даем время инициализизоваться master интерфейсу, поэтому вызываем через after
+        self.root.after(0, self.setup_interface) # Даем время инициализизоваться root интерфейсу, поэтому вызываем через after
         
-        self.master.after(0, self.check_connection_status) # Начальная проверка статуса
+        self.root.after(0, self.check_connection_status) # Начальная проверка статуса
+
+        # Запускаем главный цикл
+        self.root.mainloop()
         
-        self.start_time = time.time()
-        self.update_time_spent()
+        # self.start_time = time.time()
+        # self.update_time_spent()
 
     def setup_interface(self):
         """Создание интерфейса приложения"""
-        self.master.title(f"SproutLine - {self.nickname}")
-        self.master.resizable(False, False)
+        self.root.title(f"SproutLine - {self.nickname}")
+        self.root.resizable(False, False)
 
         self.themes = {
             'dark': {
@@ -1090,15 +1202,15 @@ class MessengerApp:
             self.photo_send = CTkImage(light_image=self.image_send, dark_image=self.image_send)
             self.photo_exit = CTkImage(light_image=self.image_exit, dark_image=self.image_exit) 
         except Exception as e:
-            print(f"Ошибка при загрузке изображения: {e}")
+            messagebox.showerror("Ошибка", f"Ошибка при загрузке изображения: {e}")
             self.photo_send = None
             self.photo_exit = None
         
-        self.message_display = ctk.CTkTextbox(self.master, width=500, height=300, corner_radius=10, state='disabled')
+        self.message_display = ctk.CTkTextbox(self.root, width=500, height=300, corner_radius=10, state='disabled')
         self.message_display.place(relx=0.01, rely=0.01)
         self.message_display.configure(font=("Arial", 14))
         
-        self.profile_frame = ctk.CTkFrame(self.master, width=175, height=150, corner_radius=10, fg_color='#1B1B1B')
+        self.profile_frame = ctk.CTkFrame(self.root, width=175, height=150, corner_radius=10, fg_color='#1B1B1B')
         self.profile_frame.place(relx=0.74, rely=0.01)
         
         self.profile_label = ctk.CTkLabel(
@@ -1133,7 +1245,7 @@ class MessengerApp:
         )
         self.version_label.place(relx=0.05, rely=0.45)
 
-        self.users_frame = ctk.CTkFrame(self.master, width=175, height=180, corner_radius=10, fg_color='#1B1B1B')
+        self.users_frame = ctk.CTkFrame(self.root, width=175, height=180, corner_radius=10, fg_color='#1B1B1B')
         self.users_frame.place(relx=0.74, rely=0.45)
         
         self.users_label = ctk.CTkLabel(
@@ -1155,11 +1267,11 @@ class MessengerApp:
         self.users_list.place(relx=0.1, rely=0.2)
         self.users_list.configure(state='disabled')
 
-        self.message_entry = ctk.CTkEntry(self.master, width=455)
+        self.message_entry = ctk.CTkEntry(self.root, width=455)
         self.message_entry.place(relx=0.01, rely=0.885)
         self.message_entry.bind("<Return>", lambda event: self.send_message())
 
-        self.send_button = ctk.CTkButton(self.master, image=self.photo_send, width=30, height=25, text="", fg_color='#1a1a1a', hover_color='#303030', command=self.send_message)
+        self.send_button = ctk.CTkButton(self.root, image=self.photo_send, width=30, height=25, text="", fg_color='#1a1a1a', hover_color='#303030', command=self.send_message)
         self.send_button.place(relx=0.67, rely=0.885)
 
         # Кнопка настроек
@@ -1192,17 +1304,17 @@ class MessengerApp:
         self.keep_alive_thread.start()
 
         self.last_message_time = 0
-        self.message_cooldown = 3
         self.max_message_length = 300
         
         self.notification_label = ctk.CTkLabel(
-            self.master,
+            self.root,
             text="",
             text_color="#ff3333",
             font=('Arial', 12)
         )
         self.notification_label.place(relx=0.01, rely=0.8)
 
+        self.update_users_list(self.init_userlist) # Выводим всех пользователей, которые были при инициализации
         self.apply_saved_settings()
 
     def send_message(self):
@@ -1245,17 +1357,33 @@ class MessengerApp:
         while True:
             try:
                 message = self.client_socket.recv(2048).decode('utf-8')
-                
+
                 if message == "ERROR:BANNED":
-                    self.master.after(0, self.show_ban_frame)
+                    self.root.after(0, self.show_ban_frame)
                     break
                 elif message == "KICKED":
-                    self.master.destroy()
+                    
+                    self.connected = False
+                    self.client_socket.close()
+                    self.root.destroy()
+
                     break
                 elif message.startswith("USERS:"):
-                    users = [user.strip() for user in message[6:].split(",") if user.strip()]
-                    self.update_users_list(users)
-                    continue
+                    if "HISTORY:" in message:
+                        message_list = message.split("HISTORY:")[1:]
+                        
+                        message = "\n".join(message_list)
+
+                        history_messages = message.split("\n")
+                        for msg in history_messages:
+                            if msg.strip() and not msg.startswith(("USERS:", "users:")):
+                                self.display_message(msg.strip(), is_new=False)
+                        
+                        continue
+                    else:
+                        users = [user.strip() for user in message[6:].split(",") if user.strip()]
+                        self.update_users_list(users)
+                        continue
                 elif message.startswith("HISTORY:"):
                     message_list = message.split("HISTORY:") # Избавляемся от всех заголовков History
                     
@@ -1265,12 +1393,13 @@ class MessengerApp:
                     for msg in history_messages:
                         if msg.strip() and not msg.startswith(("USERS:", "users:")):
                             self.display_message(msg.strip(), is_new=False)
+
                     continue
                 elif message.strip():  # Проверяем, что сообщение не пустое
                     self.display_message(message)
                 
             except Exception as e:
-                print(f"Ошибка при получении сообщения: {e}")
+                messagebox.showerror("Ошибка", f"Ошибка при получении сообщения: {e}")
                 self.connected = False
                 break
 
@@ -1298,6 +1427,9 @@ class MessengerApp:
             timestamp_end = message.find('] ') + 2
             timestamp = message[:timestamp_end]
             text = message[timestamp_end:]
+
+            if "USERS:" in text and not is_new:
+                text = text.split("USERS:")[0]
             
             if not self.settings['show_seconds'] and timestamp.count(':') == 2:
                 time_parts = timestamp[1:-2].split(':')
@@ -1364,16 +1496,16 @@ class MessengerApp:
 
     def show_notification(self, text):
         self.notification_label.configure(text=text)
-        self.master.after(3000, self.clear_notification)
+        self.root.after(3000, self.clear_notification)
 
     def clear_notification(self):
         self.notification_label.configure(text="")
 
     def center_toplevel(self, window, width, height):
-        main_x = self.master.winfo_x()
-        main_y = self.master.winfo_y()
-        main_width = self.master.winfo_width()
-        main_height = self.master.winfo_height()
+        main_x = self.root.winfo_x()
+        main_y = self.root.winfo_y()
+        main_width = self.root.winfo_width()
+        main_height = self.root.winfo_height()
         
         x = main_x + (main_width - width) // 2
         y = main_y + (main_height - height) // 2
@@ -1381,7 +1513,7 @@ class MessengerApp:
         window.geometry(f'{width}x{height}+{x}+{y}')
 
     def open_settings(self):
-        settings_window = ctk.CTkToplevel(self.master)
+        settings_window = ctk.CTkToplevel(self.root)
         settings_window.title("Настройки")
         settings_window.resizable(False, False)
         
@@ -1518,7 +1650,7 @@ class MessengerApp:
         except FileNotFoundError:
             self.save_settings()
         except json.JSONDecodeError:
-            print("Файл настроек поврежден. Используются настройки по умолчанию.")
+            messagebox.showerror("Предупреждение", "Файл настроек поврежден. Используются настройки по умолчанию.")
             self.save_settings()
             
     def save_settings(self):
@@ -1526,7 +1658,7 @@ class MessengerApp:
             with open(os.path.join("assets", "config", "settings.json"), "w", encoding='utf-8') as f:
                 json.dump(self.settings, f, indent=4, ensure_ascii=False)
         except Exception as e:
-            print(f"Ошибка при сохранении настроек: {e}")
+            messagebox.showerror("Ошибка", f"Ошибка при сохранении настроек: {e}")
 
     def apply_saved_settings(self):
         if 'current_theme' in self.settings:
@@ -1594,7 +1726,7 @@ class MessengerApp:
             self.current_theme = theme_name
             theme = self.themes[theme_name]
             
-            self.master.configure(fg_color=theme['bg'])
+            self.root.configure(fg_color=theme['bg'])
             
             self.message_display.configure(
                 fg_color=theme['text_box'],
@@ -1678,7 +1810,7 @@ class MessengerApp:
                         progress_color=theme['accent']
                     )
             
-            for window in self.master.winfo_children():
+            for window in self.root.winfo_children():
                 if isinstance(window, ctk.CTkToplevel):
                     window.configure(fg_color=theme['bg'])
                     for child in window.winfo_children():
@@ -1705,25 +1837,30 @@ class MessengerApp:
         return f'#{r:02x}{g:02x}{b:02x}'
 
     def show_ban_frame(self):
+        self.connected = False
+        self.client_socket.close()
+
         # Очищаем текущее окно
-        for widget in self.master.winfo_children():
+        for widget in self.root.winfo_children():
             widget.destroy()
         
+        self.root.destroy()
         # Показываем фрейм бана
-        ban_frame = BanFrame(self.master)
+        BanFrame(self.root)
+        ServerListWindow()
 
     def disconnect_from_server(self):
         """Отключение от сервера"""
         try:
             self.connected = False
             self.client_socket.close()
-            self.master.destroy()
+            self.root.destroy()
             ServerListWindow()
         except Exception as e:
-            print(f"Ошибка при отключении: {e}")
+            messagebox.showerror("Ошибка", f"Ошибка при отключении: {e}")
 
     def show_settings(self):
-        settings_window = ctk.CTkToplevel(self.master)
+        settings_window = ctk.CTkToplevel(self.root)
         settings_window.title("Настройки")
         settings_window.resizable(False, False)
         
@@ -1847,27 +1984,27 @@ class MessengerApp:
                                         text_color="#00ff88" if self.connected else "#ff3333"
                                     )
         # Проверяем статус каждые 5 секунд
-        self.master.after(5000, self.check_connection_status)
+        self.root.after(5000, self.check_connection_status)
 
-    def update_time_spent(self):
-        """Обновление времени, проведенного в программе"""
-        try:
-            with open(os.path.join("assets", "config", "user_data.json"), "r") as f:
-                user_data = json.load(f)
+    # def update_time_spent(self):
+    #     """Обновление времени, проведенного в программе"""
+    #     try:
+    #         with open(os.path.join("assets", "config", "user_data.json"), "r") as f:
+    #             user_data = json.load(f)
             
-            current_time = time.time()
-            elapsed_time = current_time - self.start_time
-            user_data["time_spent"] = user_data.get("time_spent", 0) + elapsed_time
+    #         current_time = time.time()
+    #         elapsed_time = current_time - self.start_time
+    #         user_data["time_spent"] = user_data.get("time_spent", 0) + elapsed_time
             
-            with open(os.path.join("assets", "config", "user_data.json"), "w") as f:
-                json.dump(user_data, f)
+    #         with open(os.path.join("assets", "config", "user_data.json"), "w") as f:
+    #             json.dump(user_data, f)
             
-            self.start_time = current_time
-        except Exception as e:
-            print(f"Ошибка обновления времени: {str(e)}")
+    #         self.start_time = current_time
+    #     except Exception as e:
+    #         messagebox.showerror("Ошибка", f"Ошибка обновления времени: {str(e)}")
         
-        # Обновляем каждые 5 минут
-        self.master.after(300000, self.update_time_spent)
+    #     # Обновляем каждые 5 минут
+    #     self.master.after(300000, self.update_time_spent)
 
 def center_window(window, width, height):
     window.update_idletasks()
@@ -1930,11 +2067,14 @@ def ensure_directories_and_files():
 if __name__ == "__main__":
     # Проверяем и создаем необходимые директории и файлы
     if ensure_directories_and_files():
-        try:
-            with open(os.path.join("assets", "config", "user_data.json"), "r") as f:
-                user_data = json.load(f)
-            ServerListWindow()
-        except (FileNotFoundError, json.JSONDecodeError):
-            RegistrationWindow()
+        # with open(os.path.join("assets", "config", "user_data.json"), "r") as f:
+        #         user_data = json.load(f)
+        ServerListWindow()
+        # try:
+        #     with open(os.path.join("assets", "config", "user_data.json"), "r") as f:
+        #         user_data = json.load(f)
+        #     ServerListWindow()
+        # except (FileNotFoundError, json.JSONDecodeError):
+        #     RegistrationWindow()
     else:
         sys.exit(1)
