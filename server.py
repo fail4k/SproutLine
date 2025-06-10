@@ -23,23 +23,17 @@ SOCKET_TIMEOUT = 604800
 # clients_lock = Lock()
 clients_lock = Semaphore(2) # Заменил замок на семафор, обеспечивая работу двух потоков одновременно без блокирования данных
 
-global userlist_delay
-userlist_delay = 1 # Время частоты рассылки списков пользователей
-
 def broadcast_locking(function_that_locks): # Декоратор, обеспечивающий блокировку потока отправки, пока сообщение доставляется, не давая другим сообщениям передаться в той же трансляции
     def wrapper(*args, **kwargs):
         global broadcast_lock # Замок на трансляцию пользователю сообщений
-        global userlist_delay # Время частоты рассылки списков пользователей
 
         broadcast_lock = True
-        userlist_delay = 5
 
         time.sleep(0.1) # Чтобы не смешаться с отправленным сообщением
         function_that_locks(*args, **kwargs)
         time.sleep(0.1) # Чтобы сообщение после не смешалось с нашим
 
         broadcast_lock = False
-        userlist_delay = 1
 
     return wrapper
 
@@ -109,7 +103,7 @@ def update_users_periodically():
     broadcast_lock = False
 
     while True:
-        time.sleep(userlist_delay)  # Ждем согласно указанному времени ожидания
+        time.sleep(2.5)  # Ждем согласно указанному времени ожидания
         if not broadcast_lock:
             broadcast_users_list()
 
@@ -219,9 +213,7 @@ def handle_client(client_socket, addr):
                     send_system_message(client_socket, "ERROR:NICKNAME_TAKEN")
                     client_socket.close()
 
-            elif operation_type == "L": # Вход в аккаунт
-                print("Login?")
-                
+            elif operation_type == "L": # Вход в аккаунт                
                 if not auth_db(nickname, password):
                     print(f"Пользователь {nickname} не прошёл аутентефикацию")
                     send_system_message(client_socket, "ERROR:WRONG_PASSWORD")
@@ -907,9 +899,11 @@ class ServerGUI:
         if selected_user:
             def do_kick():
                 if kick_user(selected_user):
-                    self.root.after(0, lambda: self.show_notification(f"Пользователь {selected_user} кикнут", 'success'))
+                    self.show_notification(f"Пользователь {selected_user} кикнут", 'success')
+                    # self.root.after(0, lambda: self.show_notification(f"Пользователь {selected_user} кикнут", 'success'))
                 else:
-                    self.root.after(0, lambda: self.show_notification(f"Не удалось кикнуть пользователя {selected_user}", 'error'))
+                    self.show_notification(f"Не удалось кикнуть пользователя {selected_user}", 'error')
+                    # self.root.after(0, lambda: self.show_notification(f"Не удалось кикнуть пользователя {selected_user}", 'error'))
             
             # Запускаем кик в отдельном потоке
             threading.Thread(target=do_kick, daemon=True).start()

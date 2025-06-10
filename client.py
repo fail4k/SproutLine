@@ -282,6 +282,7 @@ class InputWindow:
             self.subtitle_label.configure(text="Войдите в аккаунт для продолжения общения")
             self.change_type_button.configure(text="Или создайте новый")
             self.confirm_password_entry.pack_forget()
+            self.agreement_frame.pack_forget()
             self.input_button.configure(text="Войти в аккаунт")
             self.isRegister = False
         else:
@@ -292,6 +293,13 @@ class InputWindow:
             self.nickname_entry.delete(0, "end")
             self.nickname_entry.configure(placeholder_text="Никнейм")
             self.confirm_password_entry.pack(pady=6)
+            self.agreement_frame.pack(pady=6)
+            self.input_button.pack_forget()
+            self.input_button.pack(pady=10)
+            self.return_button.pack_forget()
+            self.return_button.pack()
+            self.error_label.pack_forget()
+            self.error_label.pack()
             self.input_button.configure(text="Зарегистрироваться")
             self.isRegister = True
         
@@ -315,7 +323,7 @@ class InputWindow:
             self.error_label.configure(text="Пароли не совпадают")
             return
             
-        if not self.agreement_var.get():
+        if not self.agreement_var.get() and self.isRegister:
             self.error_label.configure(text="Примите лицензионное соглашение")
             return
         
@@ -337,21 +345,11 @@ class InputWindow:
                 }, f)
 
             try:
-                # Создаем сокет и устанавливаем параметры
-                client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-                
-                # Пытаемся подключиться к серверу
-                client_socket.connect((self.server['ip'], int(self.server['port'])))
-                
-                # Закрываем окно списка серверов
+
                 self.root.destroy()
-                
-                # Создаем окно мессенджера
 
                 # Создаем экземпляр мессенджера
-                MessengerApp(self.server, client_socket, nickname, password, self.isRegister)
-                
+                MessengerApp(self.server, nickname, password, self.isRegister)
                 
                 
             except Exception as e:
@@ -989,18 +987,22 @@ def check_internet_connection():
         return False
 
 class MessengerApp:
-    def __init__(self, server, client_socket, nickname, password, isRegister):
+    def __init__(self, server, nickname, password, isRegister):
         # Создаем окно мессенджера
         self.root = ctk.CTk()
 
-        self.client_socket = client_socket
         self.nickname = nickname
         self.password = password
+        self.isRegister = "R" if isRegister else "L" # Устанавливаем вид деятельности: регистрация или вход в аккаунт
+
         self.server = server
         self.ip = server['ip']
         self.port = int(server['port'])
-        self.isRegister = "R" if isRegister else "L" # Устанавливаем вид деятельности: регистрация или вход в аккаунт
-        
+
+        # Создаем сокет и устанавливаем параметры
+        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                
         # Устанавливаем размеры окна
         window_width = 700
         window_height = 350
@@ -1018,12 +1020,15 @@ class MessengerApp:
         
         # Сначала отправляем никнейм
         try:
-            client_socket.send(f"{self.isRegister};{nickname};{password}".encode('utf-8')) # Отправляем инициализационный запрос. Контракт выглядит следующим образом: <тип операции (регистрация или вход в аккаунт)><имя_пользователя>;<пароль>
+            # Пытаемся подключиться к серверу
+            self.client_socket.connect((self.ip, self.port))
+
+            self.client_socket.send(f"{self.isRegister};{nickname};{password}".encode('utf-8')) # Отправляем инициализационный запрос. Контракт выглядит следующим образом: <тип операции (регистрация или вход в аккаунт)><имя_пользователя>;<пароль>
             # Ждем ответ от сервера
-            initial_response = client_socket.recv(1024).decode('utf-8')
+            initial_response = self.client_socket.recv(1024).decode('utf-8')
 
             if initial_response == "ERROR:BANNED":
-                self.show_ban_frame()
+                self.root.after(0, self.show_ban_frame)
                 return
             
             if initial_response == "ERROR:NICKNAME_TAKEN":
@@ -1199,8 +1204,8 @@ class MessengerApp:
             self.image_exit = Image.open(os.path.join("assets", "images", "exit.png"))
             self.image_exit = self.image_exit.resize((50, 50), Image.LANCZOS)
 
-            self.photo_send = CTkImage(light_image=self.image_send, dark_image=self.image_send)
-            self.photo_exit = CTkImage(light_image=self.image_exit, dark_image=self.image_exit) 
+            self.photo_send = CTkImage(light_image=None, dark_image=self.image_send)
+            self.photo_exit = CTkImage(light_image=None, dark_image=self.image_exit) 
         except Exception as e:
             messagebox.showerror("Ошибка", f"Ошибка при загрузке изображения: {e}")
             self.photo_send = None
@@ -1354,20 +1359,19 @@ class MessengerApp:
             threading.Thread(target=self.reconnect).start()
 
     def receive_messages(self):
-        while True:
-            try:
+        try:
+
+            while True:
                 message = self.client_socket.recv(2048).decode('utf-8')
 
                 if message == "ERROR:BANNED":
                     self.root.after(0, self.show_ban_frame)
                     break
-                elif message == "KICKED":
-                    
-                    self.connected = False
-                    self.client_socket.close()
-                    self.root.destroy()
 
+                elif message == "KICKED":
+                    self.root.after(0, self.disconnect_from_server)
                     break
+
                 elif message.startswith("USERS:"):
                     if "HISTORY:" in message:
                         message_list = message.split("HISTORY:")[1:]
@@ -1398,10 +1402,10 @@ class MessengerApp:
                 elif message.strip():  # Проверяем, что сообщение не пустое
                     self.display_message(message)
                 
-            except Exception as e:
-                messagebox.showerror("Ошибка", f"Ошибка при получении сообщения: {e}")
-                self.connected = False
-                break
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Ошибка при получении сообщения: {e}")
+            self.disconnect_from_server()
+                
 
     def keep_alive(self):
         while True:
@@ -1844,9 +1848,9 @@ class MessengerApp:
         for widget in self.root.winfo_children():
             widget.destroy()
         
-        self.root.destroy()
         # Показываем фрейм бана
         BanFrame(self.root)
+
         ServerListWindow()
 
     def disconnect_from_server(self):
@@ -1856,6 +1860,7 @@ class MessengerApp:
             self.client_socket.close()
             self.root.destroy()
             ServerListWindow()
+
         except Exception as e:
             messagebox.showerror("Ошибка", f"Ошибка при отключении: {e}")
 
