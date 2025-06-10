@@ -1363,6 +1363,7 @@ class MessengerApp:
 
             while True:
                 message = self.client_socket.recv(2048).decode('utf-8')
+                print(message)
 
                 if message == "ERROR:BANNED":
                     self.root.after(0, self.show_ban_frame)
@@ -1399,6 +1400,14 @@ class MessengerApp:
                             self.display_message(msg.strip(), is_new=False)
 
                     continue
+
+                elif "присоеденился к чату" in message and "[" in message and "]" in message and "USERS:" in message: # Костылями вырезаем сообщения о присоединение, где успел просочиться USERS
+                    if message.startswith("USERS:"):
+                        self.display_message(message[message.indexOf("["):])
+                    else:
+                        self.display_message(message.split("USERS:")[0])
+                
+
                 elif message.strip():  # Проверяем, что сообщение не пустое
                     self.display_message(message)
                 

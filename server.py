@@ -323,12 +323,6 @@ def handle_client(client_socket, addr):
                 messages.append(timestamped_message)
                 broadcast_message(timestamped_message + "\n", client_socket)
                 
-            except socket.timeout:
-                # Проверяем соединение при таймауте
-                try:
-                    client_socket.send(b".")
-                except:
-                    break
             except Exception as e:
                 print(f"Ошибка получения сообщения от {nickname}: {str(e)}")
                 break
