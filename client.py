@@ -14,6 +14,7 @@ import sys
 
 def set_window_dark_title_bar(window):
     """Установка темной темы для заголовка окна Windows"""
+    
     try:
         window.update()
         DWMWA_USE_IMMERSIVE_DARK_MODE = 20
@@ -282,6 +283,7 @@ class InputWindow:
             self.subtitle_label.configure(text="Войдите в аккаунт для продолжения общения")
             self.change_type_button.configure(text="Или создайте новый")
             self.confirm_password_entry.pack_forget()
+            self.agreement_frame.pack_forget()
             self.input_button.configure(text="Войти в аккаунт")
             self.isRegister = False
         else:
@@ -292,6 +294,13 @@ class InputWindow:
             self.nickname_entry.delete(0, "end")
             self.nickname_entry.configure(placeholder_text="Никнейм")
             self.confirm_password_entry.pack(pady=6)
+            self.agreement_frame.pack(pady=6)
+            self.input_button.pack_forget()
+            self.input_button.pack(pady=10)
+            self.return_button.pack_forget()
+            self.return_button.pack()
+            self.error_label.pack_forget()
+            self.error_label.pack()
             self.input_button.configure(text="Зарегистрироваться")
             self.isRegister = True
         
@@ -315,7 +324,7 @@ class InputWindow:
             self.error_label.configure(text="Пароли не совпадают")
             return
             
-        if not self.agreement_var.get():
+        if not self.agreement_var.get() and self.isRegister:
             self.error_label.configure(text="Примите лицензионное соглашение")
             return
         
@@ -337,25 +346,17 @@ class InputWindow:
                 }, f)
 
             try:
-                # Создаем сокет и устанавливаем параметры
-                client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-                
-                # Пытаемся подключиться к серверу
-                client_socket.connect((self.server['ip'], int(self.server['port'])))
-                
-                # Закрываем окно списка серверов
+
                 self.root.destroy()
-                
-                # Создаем окно мессенджера
 
                 # Создаем экземпляр мессенджера
-                MessengerApp(self.server, client_socket, nickname, password, self.isRegister)
-                
+                MessengerApp(self.server, nickname, password, self.isRegister)
                 
                 
             except Exception as e:
                 messagebox.showerror("Ошибка подключения", f"Не удалось подключиться к серверу: {str(e)}")
+                self.root.destroy()
+                InputWindow(self.server)
 
         except Exception as e:
             self.error_label.configure(text=f"Ошибка регистрации: {str(e)}")
@@ -924,6 +925,61 @@ class ServerDialog:
         self.dialog.wait_window()
         return self.result
 
+class DisconnectFrame(ctk.CTkFrame):
+    def __init__(self, master):
+        super().__init__(master)
+        
+        # Настраиваем цвета
+        self.configure(fg_color='transparent')  # Делаем фрейм прозрачным
+        master.configure(fg_color='#1A1A1A')   # Устанавливаем цвет фона главного окна
+        
+        # Устанавливаем размеры окна
+        master.geometry('700x350')  # Устанавливаем размеры окна
+        master.resizable(False, False)
+        master.title("SproutLine - Disconnect window")
+        # Создаем внутренний фрейм для содержимого
+        content_frame = ctk.CTkFrame(
+            self,
+            fg_color='#1E1E1E',  # Чуть светлее основного фона
+            corner_radius=10,
+            width=700,           # Указываем размеры при создании
+            height=350
+        )
+        content_frame.place(relx=0.5, rely=0.5, anchor="center")
+        
+        # Иконка Дисконнекта
+        ban_label = ctk.CTkLabel(
+            content_frame,
+            text="⚠️",
+            font=("Arial", 40),
+            text_color='#FFF133'
+        )
+        ban_label.pack(pady=(20, 5))
+        
+        # Текст сообщения
+        message_label = ctk.CTkLabel(
+            content_frame,
+            text="Вы были отключены от сервера",
+            font=("Arial Bold", 24),
+            text_color="#FFF133"
+        )
+        message_label.pack(pady=5)
+        
+        # Кнопка закрытия
+        close_button = ctk.CTkButton(
+            content_frame,
+            text="Закрыть",
+            font=("Arial", 14),
+            fg_color='#2A2A2A',
+            hover_color='#3A3A3A',
+            command=master.destroy,
+            width=120
+        )
+        close_button.pack(pady=15)
+        
+        # Растягиваем фрейм на все окно
+        self.pack(fill="both", expand=True)
+
 class BanFrame(ctk.CTkFrame):
     def __init__(self, master):
         super().__init__(master)
@@ -989,18 +1045,22 @@ def check_internet_connection():
         return False
 
 class MessengerApp:
-    def __init__(self, server, client_socket, nickname, password, isRegister):
+    def __init__(self, server, nickname, password, isRegister):
         # Создаем окно мессенджера
         self.root = ctk.CTk()
 
-        self.client_socket = client_socket
         self.nickname = nickname
         self.password = password
+        self.isRegister = "R" if isRegister else "L" # Устанавливаем вид деятельности: регистрация или вход в аккаунт
+
         self.server = server
         self.ip = server['ip']
         self.port = int(server['port'])
-        self.isRegister = "R" if isRegister else "L" # Устанавливаем вид деятельности: регистрация или вход в аккаунт
-        
+
+        # Создаем сокет и устанавливаем параметры
+        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                
         # Устанавливаем размеры окна
         window_width = 700
         window_height = 350
@@ -1018,12 +1078,15 @@ class MessengerApp:
         
         # Сначала отправляем никнейм
         try:
-            client_socket.send(f"{self.isRegister};{nickname};{password}".encode('utf-8')) # Отправляем инициализационный запрос. Контракт выглядит следующим образом: <тип операции (регистрация или вход в аккаунт)><имя_пользователя>;<пароль>
+            # Пытаемся подключиться к серверу
+            self.client_socket.connect((self.ip, self.port))
+
+            self.client_socket.send(f"{self.isRegister};{nickname};{password}".encode('utf-8')) # Отправляем инициализационный запрос. Контракт выглядит следующим образом: <тип операции (регистрация или вход в аккаунт)><имя_пользователя>;<пароль>
             # Ждем ответ от сервера
-            initial_response = client_socket.recv(1024).decode('utf-8')
+            initial_response = self.client_socket.recv(1024).decode('utf-8')
 
             if initial_response == "ERROR:BANNED":
-                self.show_ban_frame()
+                self.root.after(0, self.show_ban_frame)
                 return
             
             if initial_response == "ERROR:NICKNAME_TAKEN":
@@ -1055,6 +1118,7 @@ class MessengerApp:
 
         except Exception as e:
             messagebox.showerror("Ошибка", f"Ошибка при инициализации: {e}")
+            InputWindow(self.server)
             return
             
         self.connected = True
@@ -1199,8 +1263,8 @@ class MessengerApp:
             self.image_exit = Image.open(os.path.join("assets", "images", "exit.png"))
             self.image_exit = self.image_exit.resize((50, 50), Image.LANCZOS)
 
-            self.photo_send = CTkImage(light_image=self.image_send, dark_image=self.image_send)
-            self.photo_exit = CTkImage(light_image=self.image_exit, dark_image=self.image_exit) 
+            self.photo_send = CTkImage(light_image=None, dark_image=self.image_send)
+            self.photo_exit = CTkImage(light_image=None, dark_image=self.image_exit) 
         except Exception as e:
             messagebox.showerror("Ошибка", f"Ошибка при загрузке изображения: {e}")
             self.photo_send = None
@@ -1354,36 +1418,23 @@ class MessengerApp:
             threading.Thread(target=self.reconnect).start()
 
     def receive_messages(self):
-        while True:
-            try:
+        try:
+
+            while True:
                 message = self.client_socket.recv(2048).decode('utf-8')
 
                 if message == "ERROR:BANNED":
                     self.root.after(0, self.show_ban_frame)
                     break
+
                 elif message == "KICKED":
-                    
-                    self.connected = False
-                    self.client_socket.close()
-                    self.root.destroy()
-
+                    self.root.after(0, self.disconnect_from_server)
                     break
-                elif message.startswith("USERS:"):
-                    if "HISTORY:" in message:
-                        message_list = message.split("HISTORY:")[1:]
-                        
-                        message = "\n".join(message_list)
 
-                        history_messages = message.split("\n")
-                        for msg in history_messages:
-                            if msg.strip() and not msg.startswith(("USERS:", "users:")):
-                                self.display_message(msg.strip(), is_new=False)
-                        
-                        continue
-                    else:
-                        users = [user.strip() for user in message[6:].split(",") if user.strip()]
-                        self.update_users_list(users)
-                        continue
+                elif message.startswith("USERS:"):
+                    users = [user.strip() for user in message[6:].split(",") if user.strip()]
+                    self.update_users_list(users)
+                    continue
                 elif message.startswith("HISTORY:"):
                     message_list = message.split("HISTORY:") # Избавляемся от всех заголовков History
                     
@@ -1395,13 +1446,14 @@ class MessengerApp:
                             self.display_message(msg.strip(), is_new=False)
 
                     continue
+
                 elif message.strip():  # Проверяем, что сообщение не пустое
                     self.display_message(message)
                 
-            except Exception as e:
-                messagebox.showerror("Ошибка", f"Ошибка при получении сообщения: {e}")
-                self.connected = False
-                break
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Ошибка при получении сообщения: {e}")
+            self.root.after(0, self.disconnect_from_server)
+                
 
     def keep_alive(self):
         while True:
@@ -1722,6 +1774,7 @@ class MessengerApp:
 
     def apply_theme(self, theme_name):
         """Применение темы"""
+
         if theme_name in self.themes:
             self.current_theme = theme_name
             theme = self.themes[theme_name]
@@ -1844,20 +1897,26 @@ class MessengerApp:
         for widget in self.root.winfo_children():
             widget.destroy()
         
-        self.root.destroy()
         # Показываем фрейм бана
         BanFrame(self.root)
+
         ServerListWindow()
 
     def disconnect_from_server(self):
         """Отключение от сервера"""
-        try:
-            self.connected = False
-            self.client_socket.close()
-            self.root.destroy()
-            ServerListWindow()
-        except Exception as e:
-            messagebox.showerror("Ошибка", f"Ошибка при отключении: {e}")
+
+        self.connected = False
+        self.client_socket.close()
+
+        # Очищаем текущее окно
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+        # Показываем фрейм дисконнекта
+        DisconnectFrame(self.root)
+
+        ServerListWindow()
+            
 
     def show_settings(self):
         settings_window = ctk.CTkToplevel(self.root)
