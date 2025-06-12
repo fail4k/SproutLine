@@ -14,6 +14,7 @@ import sys
 
 def set_window_dark_title_bar(window):
     """Установка темной темы для заголовка окна Windows"""
+    
     try:
         window.update()
         DWMWA_USE_IMMERSIVE_DARK_MODE = 20
@@ -354,6 +355,8 @@ class InputWindow:
                 
             except Exception as e:
                 messagebox.showerror("Ошибка подключения", f"Не удалось подключиться к серверу: {str(e)}")
+                self.root.destroy()
+                InputWindow(self.server)
 
         except Exception as e:
             self.error_label.configure(text=f"Ошибка регистрации: {str(e)}")
@@ -922,6 +925,61 @@ class ServerDialog:
         self.dialog.wait_window()
         return self.result
 
+class DisconnectFrame(ctk.CTkFrame):
+    def __init__(self, master):
+        super().__init__(master)
+        
+        # Настраиваем цвета
+        self.configure(fg_color='transparent')  # Делаем фрейм прозрачным
+        master.configure(fg_color='#1A1A1A')   # Устанавливаем цвет фона главного окна
+        
+        # Устанавливаем размеры окна
+        master.geometry('700x350')  # Устанавливаем размеры окна
+        master.resizable(False, False)
+        master.title("SproutLine - Disconnect window")
+        # Создаем внутренний фрейм для содержимого
+        content_frame = ctk.CTkFrame(
+            self,
+            fg_color='#1E1E1E',  # Чуть светлее основного фона
+            corner_radius=10,
+            width=700,           # Указываем размеры при создании
+            height=350
+        )
+        content_frame.place(relx=0.5, rely=0.5, anchor="center")
+        
+        # Иконка Дисконнекта
+        ban_label = ctk.CTkLabel(
+            content_frame,
+            text="⚠️",
+            font=("Arial", 40),
+            text_color='#FFF133'
+        )
+        ban_label.pack(pady=(20, 5))
+        
+        # Текст сообщения
+        message_label = ctk.CTkLabel(
+            content_frame,
+            text="Вы были отключены от сервера",
+            font=("Arial Bold", 24),
+            text_color="#FFF133"
+        )
+        message_label.pack(pady=5)
+        
+        # Кнопка закрытия
+        close_button = ctk.CTkButton(
+            content_frame,
+            text="Закрыть",
+            font=("Arial", 14),
+            fg_color='#2A2A2A',
+            hover_color='#3A3A3A',
+            command=master.destroy,
+            width=120
+        )
+        close_button.pack(pady=15)
+        
+        # Растягиваем фрейм на все окно
+        self.pack(fill="both", expand=True)
+
 class BanFrame(ctk.CTkFrame):
     def __init__(self, master):
         super().__init__(master)
@@ -1060,6 +1118,7 @@ class MessengerApp:
 
         except Exception as e:
             messagebox.showerror("Ошибка", f"Ошибка при инициализации: {e}")
+            InputWindow(self.server)
             return
             
         self.connected = True
@@ -1363,7 +1422,6 @@ class MessengerApp:
 
             while True:
                 message = self.client_socket.recv(2048).decode('utf-8')
-                print(message)
 
                 if message == "ERROR:BANNED":
                     self.root.after(0, self.show_ban_frame)
@@ -1374,21 +1432,9 @@ class MessengerApp:
                     break
 
                 elif message.startswith("USERS:"):
-                    if "HISTORY:" in message:
-                        message_list = message.split("HISTORY:")[1:]
-                        
-                        message = "\n".join(message_list)
-
-                        history_messages = message.split("\n")
-                        for msg in history_messages:
-                            if msg.strip() and not msg.startswith(("USERS:", "users:")):
-                                self.display_message(msg.strip(), is_new=False)
-                        
-                        continue
-                    else:
-                        users = [user.strip() for user in message[6:].split(",") if user.strip()]
-                        self.update_users_list(users)
-                        continue
+                    users = [user.strip() for user in message[6:].split(",") if user.strip()]
+                    self.update_users_list(users)
+                    continue
                 elif message.startswith("HISTORY:"):
                     message_list = message.split("HISTORY:") # Избавляемся от всех заголовков History
                     
@@ -1401,19 +1447,12 @@ class MessengerApp:
 
                     continue
 
-                elif "присоеденился к чату" in message and "[" in message and "]" in message and "USERS:" in message: # Костылями вырезаем сообщения о присоединение, где успел просочиться USERS
-                    if message.startswith("USERS:"):
-                        self.display_message(message[message.indexOf("["):])
-                    else:
-                        self.display_message(message.split("USERS:")[0])
-                
-
                 elif message.strip():  # Проверяем, что сообщение не пустое
                     self.display_message(message)
                 
         except Exception as e:
             messagebox.showerror("Ошибка", f"Ошибка при получении сообщения: {e}")
-            self.disconnect_from_server()
+            self.root.after(0, self.disconnect_from_server)
                 
 
     def keep_alive(self):
@@ -1735,6 +1774,7 @@ class MessengerApp:
 
     def apply_theme(self, theme_name):
         """Применение темы"""
+
         if theme_name in self.themes:
             self.current_theme = theme_name
             theme = self.themes[theme_name]
@@ -1864,14 +1904,19 @@ class MessengerApp:
 
     def disconnect_from_server(self):
         """Отключение от сервера"""
-        try:
-            self.connected = False
-            self.client_socket.close()
-            self.root.destroy()
-            ServerListWindow()
 
-        except Exception as e:
-            messagebox.showerror("Ошибка", f"Ошибка при отключении: {e}")
+        self.connected = False
+        self.client_socket.close()
+
+        # Очищаем текущее окно
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+        # Показываем фрейм дисконнекта
+        DisconnectFrame(self.root)
+
+        ServerListWindow()
+            
 
     def show_settings(self):
         settings_window = ctk.CTkToplevel(self.root)

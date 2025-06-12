@@ -23,20 +23,6 @@ SOCKET_TIMEOUT = 604800
 # clients_lock = Lock()
 clients_lock = Semaphore(2) # Заменил замок на семафор, обеспечивая работу двух потоков одновременно без блокирования данных
 
-def broadcast_locking(function_that_locks): # Декоратор, обеспечивающий блокировку потока отправки, пока сообщение доставляется, не давая другим сообщениям передаться в той же трансляции
-    def wrapper(*args, **kwargs):
-        global broadcast_lock # Замок на трансляцию пользователю сообщений
-
-        broadcast_lock = True
-
-        time.sleep(0.1) # Чтобы не смешаться с отправленным сообщением
-        function_that_locks(*args, **kwargs)
-        time.sleep(0.1) # Чтобы сообщение после не смешалось с нашим
-
-        broadcast_lock = False
-
-    return wrapper
-
 clients = {}  # Словарь {сокет: никнейм}
 messages = []
 
@@ -50,7 +36,6 @@ banned_users_ips = {}  # {nickname: ip_address}
 def get_current_time():
     return datetime.now().strftime("%H:%M:%S")
 
-@broadcast_locking
 def broadcast_message(message, sender_conn):
 
     def do_broadcast():
@@ -71,7 +56,8 @@ def broadcast_message(message, sender_conn):
         # Запускаем рассылку в отдельном потоке
         broadcast_thread = threading.Thread(target=do_broadcast, daemon=True)
         broadcast_thread.start()
-        broadcast_thread.join(timeout=0.5)  # Уменьшаем таймаут до 0.5 секунд
+        broadcast_thread.join(timeout=2.5) # Уменьшаем таймаут до 2.5 секунд
+
     except Exception as e:
         print(f"Ошибка broadcast: {e}")
 
@@ -79,7 +65,6 @@ def broadcast_message(message, sender_conn):
     if server_gui:
         server_gui.root.after(100, server_gui.update_chat_history)
 
-@broadcast_locking
 def send_system_message(client_socket, message):
     """Отправка системного сообщения клиенту"""
     try:
@@ -88,24 +73,25 @@ def send_system_message(client_socket, message):
         print(f"Ошибка отправки системного сообщения: {e}")
 
 def broadcast_users_list():
-    with clients_lock:  # Добавляем блокировку для безопасного доступа к clients
+    # with clients_lock:  # Добавляем блокировку для безопасного доступа к clients
+        time.sleep(1)
         if clients:
             users_list = "USERS:" + ",".join([name.strip() for name in clients.values()])
-            for client in clients.copy():  # Используем copy() для избежания ошибок при изменении словаря
-                try:
-                    client.send(users_list.encode('utf-8'))
-                except Exception as e:
-                    print(f"Ошибка отправки системного сообщения со списком пользователей: {e}")
-                    remove(client)
+            # for client in clients.copy():  # Используем copy() для избежания ошибок при изменении словаря
+            try:
+                broadcast_message(users_list, None)
+                # client.send(users_list.encode('utf-8'))
+            except Exception as e:
+                print(f"Ошибка отправки системного сообщения со списком пользователей: {e}")
 
-def update_users_periodically():
-    global broadcast_lock 
-    broadcast_lock = False
+# def update_users_periodically():
+#     global broadcast_lock 
+#     broadcast_lock = False
 
-    while True:
-        time.sleep(2.5)  # Ждем согласно указанному времени ожидания
-        if not broadcast_lock:
-            broadcast_users_list()
+#     while True:
+#         time.sleep(2.5)  # Ждем согласно указанному времени ожидания
+#         if not broadcast_lock:
+#             broadcast_users_list()
 
 def wrap_message(message, max_width=70):
     """Форматирует сообщение с переносом по словам"""
@@ -242,7 +228,7 @@ def handle_client(client_socket, addr):
 
 
         except socket.timeout:
-            print("Ошибка подключения пользователя: ", "вышло время ожидангия сокета")
+            print("Ошибка подключения пользователя: ", "вышло время ожидания сокета")
             client_socket.close()
             return
         except Exception as e:
@@ -250,8 +236,8 @@ def handle_client(client_socket, addr):
             client_socket.close()
             return
             
-        # После получения никнейма устанавливаем больший таймаут
-        client_socket.settimeout(30.0)  # 30 секунд для основной работы
+        # После получения никнейма убираем таймаут
+        client_socket.settimeout(None)
 
         # Обновляем GUI в главном потоке
         if server_gui:
@@ -265,13 +251,13 @@ def handle_client(client_socket, addr):
         if messages:
             chunk_size = 10  # Отправляем по 10 сообщений
 
-            @broadcast_locking
             def send_history(messages, chunk_size): # Создаем блокирующуя функцию отправки истории
                 for i in range(0, len(messages), chunk_size):
                     chunk = messages[i:i + chunk_size]
                     history_message = "HISTORY:" + "\n".join(chunk) + "\n"
                     try:
-                        client_socket.send(history_message.encode('utf-8'))
+                        send_system_message(client_socket, history_message)
+                        # client_socket.send(history_message.encode('utf-8'))
                         time.sleep(0.1)  # Небольшая пауза между чанками
 
                     except Exception as e:
@@ -285,6 +271,7 @@ def handle_client(client_socket, addr):
         connect_message = f"[{get_current_time()}] {nickname} присоединился к чату"
         messages.append(connect_message)
         broadcast_message(connect_message + "\n", None)
+        broadcast_users_list()
 
         # Начинаем обработку сообщений
         last_message_time = 0
@@ -295,6 +282,7 @@ def handle_client(client_socket, addr):
                 message = client_socket.recv(1024).decode('utf-8').strip()
                 if not message:
                     print(f"Клиент {nickname} отключился (пустое сообщение)")
+                    broadcast_users_list()
                     break
 
                 # Игнорируем системные сообщения и сам ник
@@ -348,6 +336,7 @@ def remove(client_socket):
                     disconnect_message = f"[{get_current_time()}] {nickname} покинул чат"
                     messages.append(disconnect_message)
                     broadcast_message(disconnect_message + "\n", None)
+                    broadcast_users_list()
                     
                     # Обновляем GUI через очередь событий
                     if server_gui:
@@ -1169,8 +1158,8 @@ def start_server():
         accept_thread.start()
         
         # Запускаем поток обновления списка пользователей
-        update_thread = threading.Thread(target=update_users_periodically, daemon=True)
-        update_thread.start()
+        # update_thread = threading.Thread(target=update_users_periodically, daemon=True)
+        # update_thread.start()
         
         # Запускаем GUI в основном потоке
         gui.run()
