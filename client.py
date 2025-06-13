@@ -14,7 +14,7 @@ import sys
 
 def set_window_dark_title_bar(window):
     """Установка темной темы для заголовка окна Windows"""
-    
+
     try:
         window.update()
         DWMWA_USE_IMMERSIVE_DARK_MODE = 20
@@ -354,7 +354,7 @@ class InputWindow:
                 
                 
             except Exception as e:
-                messagebox.showerror("Ошибка подключения", f"Не удалось подключиться к серверу: {str(e)}")
+                # messagebox.showerror("Ошибка подключения", f"Не удалось подключиться к серверу: {str(e)}")
                 self.root.destroy()
                 InputWindow(self.server)
 
@@ -928,6 +928,10 @@ class ServerDialog:
 class DisconnectFrame(ctk.CTkFrame):
     def __init__(self, master):
         super().__init__(master)
+
+        def closeWindow():
+            master.destroy()
+            ServerListWindow()
         
         # Настраиваем цвета
         self.configure(fg_color='transparent')  # Делаем фрейм прозрачным
@@ -972,7 +976,7 @@ class DisconnectFrame(ctk.CTkFrame):
             font=("Arial", 14),
             fg_color='#2A2A2A',
             hover_color='#3A3A3A',
-            command=master.destroy,
+            command=closeWindow,
             width=120
         )
         close_button.pack(pady=15)
@@ -983,6 +987,10 @@ class DisconnectFrame(ctk.CTkFrame):
 class BanFrame(ctk.CTkFrame):
     def __init__(self, master):
         super().__init__(master)
+
+        def closeWindow():
+            master.destroy()
+            ServerListWindow()
         
         # Настраиваем цвета
         self.configure(fg_color='transparent')  # Делаем фрейм прозрачным
@@ -1027,9 +1035,11 @@ class BanFrame(ctk.CTkFrame):
             font=("Arial", 14),
             fg_color='#2A2A2A',
             hover_color='#3A3A3A',
-            command=master.destroy,
+            command=closeWindow,
             width=120
         )
+
+        
         close_button.pack(pady=15)
         
         # Растягиваем фрейм на все окно
@@ -1086,28 +1096,24 @@ class MessengerApp:
             initial_response = self.client_socket.recv(1024).decode('utf-8')
 
             if initial_response == "ERROR:BANNED":
-                self.root.after(0, self.show_ban_frame)
-                return
+                self.root.after(0, self.show_ban_frame) # Если мы забанены - отображаем окно бана после инициализации компонента
+                self.root.mainloop() # Инициализируем компонент
             
             if initial_response == "ERROR:NICKNAME_TAKEN":
                 self.root.destroy()
                 InputWindow(self.server, error="Пользователь с таким именем уже существует")
-                return
 
             if initial_response == "ERROR:NICKNAME_ONLINE":
                 self.root.destroy()
                 InputWindow(self.server, error="Пользователь с таким именем в данный момент находится в чате")
-                return
             
             if initial_response == "ERROR:WRONG_PASSWORD":
                 self.root.destroy()
                 InputWindow(self.server, error="Неверный пароль")
-                return
             
             if initial_response == "ERROR:WRONG_OPERATION":
                 self.root.destroy()
                 InputWindow(self.server, error="Неверная операция, ошибка приложения")
-                return
 
             if initial_response[:4] == "CCT:": # Получаем CCT:<время_между_сообщениями>;USERS:<список>,<всех>,<пользователей>
                 response = initial_response[4:].split(";") # Разбиваем на массив из <время_между_сообщениями> и USERS:<список>,<всех>,<пользователей>
@@ -1451,7 +1457,7 @@ class MessengerApp:
                     self.display_message(message)
                 
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Ошибка при получении сообщения: {e}")
+            # messagebox.showerror("Ошибка", f"Ошибка при получении сообщения: {e}")
             self.root.after(0, self.disconnect_from_server)
                 
 
@@ -1496,7 +1502,7 @@ class MessengerApp:
         if self.settings['auto_scroll']:
             self.message_display.see("end")
             
-        self.message_display.configure(state='disabled')
+        # self.message_display.configure(state='disabled')
         
         if is_new and self.settings['message_sound']:
             pass
@@ -1900,7 +1906,7 @@ class MessengerApp:
         # Показываем фрейм бана
         BanFrame(self.root)
 
-        ServerListWindow()
+        
 
     def disconnect_from_server(self):
         """Отключение от сервера"""
@@ -1914,8 +1920,6 @@ class MessengerApp:
 
         # Показываем фрейм дисконнекта
         DisconnectFrame(self.root)
-
-        ServerListWindow()
             
 
     def show_settings(self):
