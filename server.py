@@ -29,6 +29,7 @@ MAX_NICKNAME_LENGTH = 20
 SOCKET_TIMEOUT = 604800
 # clients_lock = Lock()
 clients_lock = Semaphore(2) # Заменил замок на семафор, обеспечивая работу двух потоков одновременно без блокирования данных
+db_lock = Lock() # Замок для безопасного доступа к БД
 
 clients = {}  # Словарь {сокет: никнейм}
 messages = []
@@ -150,46 +151,44 @@ def wrap_message(message, max_width=70):
 def check_user_exists_db(username):
     """Проверяем: есть ли уже такой пользователь в БД"""
 
-    try:
-        cursor.execute('SELECT * FROM Users WHERE username = ?', (username,))
-        user = cursor.fetchone()
-        return True if user else False
-    except Exception as e:
-        print("Ошибка базы данных: ", e)
+    with db_lock:
+        try:
+            cursor.execute('SELECT * FROM Users WHERE username = ?', (username,))
+            user = cursor.fetchone()
+            return True if user else False
+        except Exception as e:
+            print("Ошибка базы данных: ", e)
 
 def auth_db(username, password):
     """Проводим аутентефикацию пользователя"""
 
-    try:
-        cursor.execute('SELECT * FROM Users WHERE username = ?', (username,))
-        user = cursor.fetchone()
-        if user:
-            if user[1] == password:
-                return True
+    with db_lock:
+        try:
+            cursor.execute('SELECT * FROM Users WHERE username = ?', (username,))
+            user = cursor.fetchone()
+            if user:
+                if user[1] == password:
+                    return True
+                else:
+                    return False
             else:
                 return False
-        else:
-            return False
-    except Exception as e:
-        print("Ошибка базы данных: ", e)
+        except Exception as e:
+            print("Ошибка базы данных: ", e)
 
-def check_is_banned(username):
-    """Проводим проверку пользователя на наличие бана на сервере по нику"""
-    try:
-        cursor.execute('SELECT * FROM Banned_Users WHERE username = ?', (username,))
-        user = cursor.fetchone()
-        return True if user else False
-    except Exception as e:
-        print("Ошибка базы данных: ", e)
+def check_is_banned(username, ip=None):
+    """Проводим проверку пользователя на наличие бана на сервере по нику или ip"""
 
-def check_is_ip_banned(ip):
-    """Проводим проверку пользователя на наличие бана на сервере по ip адресу"""
-    try:
-        cursor.execute('SELECT * FROM Banned_Users WHERE ip = ?', (ip,))
-        user = cursor.fetchone()
-        return True if user else False
-    except Exception as e:
-        print("Ошибка базы данных: ", e)
+    with db_lock:
+        try:
+            if ip: # Если есть ip, то нет смысла проверять по нику
+                cursor.execute('SELECT * FROM Banned_Users WHERE ip = ?', (ip,))
+            else:
+                cursor.execute('SELECT * FROM Banned_Users WHERE username = ?', (username,))
+            user = cursor.fetchone()
+            return True if user else False
+        except Exception as e:
+            print("Ошибка базы данных: ", e)
 
 
 def handle_client(client_socket, addr):
@@ -208,7 +207,7 @@ def handle_client(client_socket, addr):
             password = hashlib.sha256(init_message.split(";")[2].encode("utf-8")).hexdigest()
 
             # Проверяем на наличие бана
-            if check_is_ip_banned(addr[0]) or check_is_banned(nickname):
+            if check_is_banned(nickname, addr[0]):
                 try:
                     send_system_message(client_socket, "ERROR:BANNED")
                 except:
@@ -218,8 +217,9 @@ def handle_client(client_socket, addr):
 
             if operation_type == "R": # Регистрация
                 if check_user_exists_db(nickname) == False: # Только если позователя нет
-                    cursor.execute('INSERT INTO Users (username, password) VALUES (?, ?)', (nickname, password,)) # Добавляем нашего пользователя
-                    connection.commit() # Применяем изменения в БД
+                    with db_lock:
+                        cursor.execute('INSERT INTO Users (username, password) VALUES (?, ?)', (nickname, password,)) # Добавляем нашего пользователя
+                        connection.commit() # Применяем изменения в БД
                     print("Добавлен пользователь: ", nickname)
                 else:
                     print(f"Пользователь {nickname} уже существует")
@@ -424,8 +424,9 @@ def ban_user(nickname):
                 # Удаляем клиента через remove() вместо прямого удаления
                 remove(sock_to_ban)
         
-        cursor.execute('INSERT INTO Banned_Users (username, ip) VALUES (?, ?)', (nickname, client_ip)) # Добавляем нашего забаненного пользователя
-        connection.commit() # Применяем изменения в БД
+        with db_lock:
+            cursor.execute('INSERT INTO Banned_Users (username, ip) VALUES (?, ?)', (nickname, client_ip)) # Добавляем нашего забаненного пользователя
+            connection.commit() # Применяем изменения в БД
         return True
     except Exception as e:
         print(f"Ошибка при бане пользователя {nickname}: {e}")
@@ -434,8 +435,9 @@ def ban_user(nickname):
 def unban_user(nickname):
     """Разбанить пользователя"""
     if check_is_banned(nickname):
-        cursor.execute('DELETE FROM Banned_Users WHERE username = ?', (nickname)) # Удаляем нашего забаненного пользователя
-        connection.commit() # Применяем изменения в БД
+        with db_lock:
+            cursor.execute('DELETE FROM Banned_Users WHERE username = ?', (nickname)) # Удаляем нашего забаненного пользователя
+            connection.commit() # Применяем изменения в БД
 
         # # Удаляем IP из banned_ips если он был связан с этим пользователем
         # if nickname in banned_users_ips:
@@ -872,7 +874,8 @@ class ServerGUI:
             self.banned_list.delete("1.0", "end")
 
             # Получаем всех забаненных пользователей из БД
-            cursor.execute('SELECT * FROM Banned_Users')
+            with db_lock:
+                cursor.execute('SELECT * FROM Banned_Users')
             banned_users_list = cursor.fetchall()
             banned_users = []
             if banned_users_list:
@@ -963,7 +966,8 @@ class ServerGUI:
         """Разбанить выбранного пользователя"""
 
         # Получаем всех забаненных пользователей из БД
-        cursor.execute('SELECT * FROM Banned_Users')
+        with db_lock:
+            cursor.execute('SELECT * FROM Banned_Users')
         banned_users_list = cursor.fetchall()
         banned_users = []
         if banned_users_list:
