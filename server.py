@@ -468,6 +468,7 @@ class UserSelectionDialog:
         
         # Делаем окно модальным
         self.dialog.transient(parent_gui.root)
+        self.dialog.wait_visibility()
         self.dialog.grab_set()
         self.dialog.focus_force()
         
@@ -561,6 +562,7 @@ class BanDialog:
         
         # Делаем окно модальным
         self.dialog.transient(parent_gui.root)
+        self.dialog.wait_visibility()
         self.dialog.grab_set()
         self.dialog.focus_force()
         

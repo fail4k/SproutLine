@@ -1096,28 +1096,24 @@ class MessengerApp:
             initial_response = self.client_socket.recv(1024).decode('utf-8')
 
             if initial_response == "ERROR:BANNED":
-                self.root.after(0, self.show_ban_frame)
-                return
+                self.root.after(0, self.show_ban_frame) # Если мы забанены - отображаем окно бана после инициализации компонента
+                self.root.mainloop() # Инициализируем компонент
             
             if initial_response == "ERROR:NICKNAME_TAKEN":
                 self.root.destroy()
                 InputWindow(self.server, error="Пользователь с таким именем уже существует")
-                return
 
             if initial_response == "ERROR:NICKNAME_ONLINE":
                 self.root.destroy()
                 InputWindow(self.server, error="Пользователь с таким именем в данный момент находится в чате")
-                return
             
             if initial_response == "ERROR:WRONG_PASSWORD":
                 self.root.destroy()
                 InputWindow(self.server, error="Неверный пароль")
-                return
             
             if initial_response == "ERROR:WRONG_OPERATION":
                 self.root.destroy()
                 InputWindow(self.server, error="Неверная операция, ошибка приложения")
-                return
 
             if initial_response[:4] == "CCT:": # Получаем CCT:<время_между_сообщениями>;USERS:<список>,<всех>,<пользователей>
                 response = initial_response[4:].split(";") # Разбиваем на массив из <время_между_сообщениями> и USERS:<список>,<всех>,<пользователей>
