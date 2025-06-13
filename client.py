@@ -14,7 +14,7 @@ import sys
 
 def set_window_dark_title_bar(window):
     """Установка темной темы для заголовка окна Windows"""
-    
+
     try:
         window.update()
         DWMWA_USE_IMMERSIVE_DARK_MODE = 20
@@ -928,6 +928,10 @@ class ServerDialog:
 class DisconnectFrame(ctk.CTkFrame):
     def __init__(self, master):
         super().__init__(master)
+
+        def closeWindow():
+            master.destroy()
+            ServerListWindow()
         
         # Настраиваем цвета
         self.configure(fg_color='transparent')  # Делаем фрейм прозрачным
@@ -972,7 +976,7 @@ class DisconnectFrame(ctk.CTkFrame):
             font=("Arial", 14),
             fg_color='#2A2A2A',
             hover_color='#3A3A3A',
-            command=master.destroy,
+            command=closeWindow,
             width=120
         )
         close_button.pack(pady=15)
@@ -983,6 +987,10 @@ class DisconnectFrame(ctk.CTkFrame):
 class BanFrame(ctk.CTkFrame):
     def __init__(self, master):
         super().__init__(master)
+
+        def closeWindow():
+            master.destroy()
+            ServerListWindow()
         
         # Настраиваем цвета
         self.configure(fg_color='transparent')  # Делаем фрейм прозрачным
@@ -1027,9 +1035,11 @@ class BanFrame(ctk.CTkFrame):
             font=("Arial", 14),
             fg_color='#2A2A2A',
             hover_color='#3A3A3A',
-            command=master.destroy,
+            command=closeWindow,
             width=120
         )
+
+        
         close_button.pack(pady=15)
         
         # Растягиваем фрейм на все окно
@@ -1900,7 +1910,7 @@ class MessengerApp:
         # Показываем фрейм бана
         BanFrame(self.root)
 
-        ServerListWindow()
+        
 
     def disconnect_from_server(self):
         """Отключение от сервера"""
@@ -1914,8 +1924,6 @@ class MessengerApp:
 
         # Показываем фрейм дисконнекта
         DisconnectFrame(self.root)
-
-        ServerListWindow()
             
 
     def show_settings(self):
