@@ -1502,7 +1502,7 @@ class MessengerApp:
         if self.settings['auto_scroll']:
             self.message_display.see("end")
             
-        self.message_display.configure(state='disabled')
+        # self.message_display.configure(state='disabled')
         
         if is_new and self.settings['message_sound']:
             pass
