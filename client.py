@@ -354,7 +354,7 @@ class InputWindow:
                 
                 
             except Exception as e:
-                messagebox.showerror("Ошибка подключения", f"Не удалось подключиться к серверу: {str(e)}")
+                # messagebox.showerror("Ошибка подключения", f"Не удалось подключиться к серверу: {str(e)}")
                 self.root.destroy()
                 InputWindow(self.server)
 
@@ -1457,7 +1457,7 @@ class MessengerApp:
                     self.display_message(message)
                 
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Ошибка при получении сообщения: {e}")
+            # messagebox.showerror("Ошибка", f"Ошибка при получении сообщения: {e}")
             self.root.after(0, self.disconnect_from_server)
                 
 

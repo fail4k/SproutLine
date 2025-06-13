@@ -18,6 +18,13 @@ password TEXT NOT NULL
 )
 ''') # Создаем таблицу пользователей, ник у каждого уникальный, поэтому задается как ключ, защита от создания существующего пользователя на уровне БД
 
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS Banned_Users (
+username TEXT PRIMARY KEY,
+ip TEXT
+)
+''') # Создаем таблицу забаненных пользователей c ником и ip адресом (адрес не обязателен)
+
 MAX_NICKNAME_LENGTH = 20
 SOCKET_TIMEOUT = 604800
 # clients_lock = Lock()
@@ -27,10 +34,12 @@ clients = {}  # Словарь {сокет: никнейм}
 messages = []
 
 # Добавляем глобальные переменные
-banned_users = set()  # Множество забаненных никнеймов
 server_gui = None  # Ссылка на GUI сервера
-banned_ips = set()  # Множество забаненных IP-адресов
-banned_users_ips = {}  # {nickname: ip_address}
+
+# Глобальные переменные, связанные с баном, упразднены из-за появления БД с забаннеными пользователями
+# banned_users = set()  # Множество забаненных никнеймов
+# banned_ips = set()  # Множество забаненных IP-адресов
+# banned_users_ips = {}  # {nickname: ip_address}
 
 
 def get_current_time():
@@ -164,6 +173,25 @@ def auth_db(username, password):
     except Exception as e:
         print("Ошибка базы данных: ", e)
 
+def check_is_banned(username):
+    """Проводим проверку пользователя на наличие бана на сервере по нику"""
+    try:
+        cursor.execute('SELECT * FROM Banned_Users WHERE username = ?', (username,))
+        user = cursor.fetchone()
+        return True if user else False
+    except Exception as e:
+        print("Ошибка базы данных: ", e)
+
+def check_is_ip_banned(ip):
+    """Проводим проверку пользователя на наличие бана на сервере по ip адресу"""
+    try:
+        cursor.execute('SELECT * FROM Banned_Users WHERE ip = ?', (ip,))
+        user = cursor.fetchone()
+        return True if user else False
+    except Exception as e:
+        print("Ошибка базы данных: ", e)
+
+
 def handle_client(client_socket, addr):
     """Обработка клиента"""
 
@@ -173,24 +201,23 @@ def handle_client(client_socket, addr):
         # Устанавливаем таймаут для сокета
         client_socket.settimeout(5.0)  # 5 секунд для начальной авторизации
 
-        if addr[0] in banned_ips:
-
-            try:
-                send_system_message(client_socket, "ERROR:BANNED")
-            except:
-                pass
-            client_socket.close()
-            return
-        
         try: 
             init_message = client_socket.recv(1024).decode('utf-8').strip() # Получаем инициализационное сообщение от пользвоателя по следующему контракту: <тип операции (регистрация или вход в аккаунт)><имя_пользователя>;<пароль>
             operation_type = init_message.split(";")[0]
             nickname = init_message.split(";")[1]
             password = hashlib.sha256(init_message.split(";")[2].encode("utf-8")).hexdigest()
 
+            # Проверяем на наличие бана
+            if check_is_ip_banned(addr[0]) or check_is_banned(nickname):
+                try:
+                    send_system_message(client_socket, "ERROR:BANNED")
+                except:
+                    pass
+                client_socket.close()
+                return
+
             if operation_type == "R": # Регистрация
                 if check_user_exists_db(nickname) == False: # Только если позователя нет
-
                     cursor.execute('INSERT INTO Users (username, password) VALUES (?, ?)', (nickname, password,)) # Добавляем нашего пользователя
                     connection.commit() # Применяем изменения в БД
                     print("Добавлен пользователь: ", nickname)
@@ -198,20 +225,23 @@ def handle_client(client_socket, addr):
                     print(f"Пользователь {nickname} уже существует")
                     send_system_message(client_socket, "ERROR:NICKNAME_TAKEN")
                     client_socket.close()
+                    return
 
             elif operation_type == "L": # Вход в аккаунт                
                 if not auth_db(nickname, password):
                     print(f"Пользователь {nickname} не прошёл аутентефикацию")
                     send_system_message(client_socket, "ERROR:WRONG_PASSWORD")
                     client_socket.close()
+                    return
 
             else:
                 send_system_message(client_socket, "ERROR:WRONG_OPERATION")
                 client_socket.close()
+                return
 
             # Проверка на на онлайн: если аккаунт уже в чате, но с ещё одного входа не пустит
             with clients_lock:
-                if nickname in clients.values() or nickname in banned_users:
+                if nickname in clients.values():
                     try:
                         send_system_message(client_socket, "ERROR:NICKNAME_ONLINE")
                     except:
@@ -391,14 +421,11 @@ def ban_user(nickname):
                 except:
                     pass
                 
-                if client_ip:
-                    banned_ips.add(client_ip)
-                    banned_users_ips[nickname] = client_ip
-                
                 # Удаляем клиента через remove() вместо прямого удаления
                 remove(sock_to_ban)
         
-        banned_users.add(nickname)
+        cursor.execute('INSERT INTO Banned_Users (username, ip) VALUES (?, ?)', (nickname, client_ip)) # Добавляем нашего забаненного пользователя
+        connection.commit() # Применяем изменения в БД
         return True
     except Exception as e:
         print(f"Ошибка при бане пользователя {nickname}: {e}")
@@ -406,42 +433,44 @@ def ban_user(nickname):
 
 def unban_user(nickname):
     """Разбанить пользователя"""
-    if nickname in banned_users:
-        banned_users.remove(nickname)
-        # Удаляем IP из banned_ips если он был связан с этим пользователем
-        if nickname in banned_users_ips:
-            ip = banned_users_ips[nickname]
-            if ip in banned_ips:
-                banned_ips.remove(ip)
-            del banned_users_ips[nickname]
+    if check_is_banned(nickname):
+        cursor.execute('DELETE FROM Banned_Users WHERE username = ?', (nickname)) # Удаляем нашего забаненного пользователя
+        connection.commit() # Применяем изменения в БД
+
+        # # Удаляем IP из banned_ips если он был связан с этим пользователем
+        # if nickname in banned_users_ips:
+        #     ip = banned_users_ips[nickname]
+        #     if ip in banned_ips:
+        #         banned_ips.remove(ip)
+        #     del banned_users_ips[nickname]
         return True
     return False
 
-def ban_ip(ip):
-    """Забанить IP-адрес"""
-    def do_ban():
-        try:
-            banned_ips.add(ip)  # Добавляем IP в список забаненных
-            with clients_lock:
-                for sock in list(clients.keys()):
-                    try:
-                        if sock.getpeername()[0] == ip:
-                            send_system_message(sock, "ERROR:BANNED")  # Уведомляем клиента о бане
-                            remove(sock)  # Удаляем клиента
-                    except Exception as e:
-                        print(f"Ошибка при проверке IP: {e}")
+# def ban_ip(ip):
+#     """Забанить IP-адрес"""
+#     def do_ban():
+#         try:
+#             banned_ips.add(ip)  # Добавляем IP в список забаненных
+#             with clients_lock:
+#                 for sock in list(clients.keys()):
+#                     try:
+#                         if sock.getpeername()[0] == ip:
+#                             send_system_message(sock, "ERROR:BANNED")  # Уведомляем клиента о бане
+#                             remove(sock)  # Удаляем клиента
+#                     except Exception as e:
+#                         print(f"Ошибка при проверке IP: {e}")
             
-            # Обновляем GUI в главном потоке
-            server_gui.root.after(0, lambda: server_gui.show_notification(f"IP {ip} забанен", 'success'))
-            server_gui.root.after(0, server_gui.update_users_list)
-            server_gui.root.after(0, server_gui.update_banned_list)
+#             # Обновляем GUI в главном потоке
+#             server_gui.root.after(0, lambda: server_gui.show_notification(f"IP {ip} забанен", 'success'))
+#             server_gui.root.after(0, server_gui.update_users_list)
+#             server_gui.root.after(0, server_gui.update_banned_list)
             
-        except Exception as e:
-            server_gui.root.after(0, lambda: server_gui.show_notification(f"Ошибка при бане: {str(e)}", 'error'))
+#         except Exception as e:
+#             server_gui.root.after(0, lambda: server_gui.show_notification(f"Ошибка при бане: {str(e)}", 'error'))
     
-    # Запускаем бан в отдельном потоке
-    ban_thread = threading.Thread(target=do_ban, daemon=True)
-    ban_thread.start()
+#     # Запускаем бан в отдельном потоке
+#     ban_thread = threading.Thread(target=do_ban, daemon=True)
+#     ban_thread.start()
 
 def change_nickname(client_socket, new_nickname):
     """Смена никнейма пользователя"""
@@ -841,6 +870,16 @@ class ServerGUI:
         try:
             self.banned_list.configure(state="normal")
             self.banned_list.delete("1.0", "end")
+
+            # Получаем всех забаненных пользователей из БД
+            cursor.execute('SELECT * FROM Banned_Users')
+            banned_users_list = cursor.fetchall()
+            banned_users = []
+            if banned_users_list:
+                for i in banned_users_list:
+                    banned_users.append(i[0])
+            
+            # Добавляем людей в бане из БД в локальную переменную
             if banned_users:
                 for nickname in banned_users:
                     self.banned_list.insert("end", f"{nickname}\n")
@@ -922,6 +961,15 @@ class ServerGUI:
     
     def unban_selected_user(self):
         """Разбанить выбранного пользователя"""
+
+        # Получаем всех забаненных пользователей из БД
+        cursor.execute('SELECT * FROM Banned_Users')
+        banned_users_list = cursor.fetchall()
+        banned_users = []
+        if banned_users_list:
+            for i in banned_users_list:
+                banned_users.append(i[0])
+
         if not banned_users:
             self.show_notification("Нет забаненных пользователей", 'error')
             return
