@@ -5,7 +5,6 @@ import time
 from PIL import Image
 from customtkinter import CTkImage
 import json
-import tkinter.messagebox as messagebox
 import os
 import ctypes as ct
 import urllib.request
@@ -345,9 +344,9 @@ class InputWindow:
                         
                 }, f)
 
-            try:
+            self.root.destroy()
 
-                self.root.destroy()
+            try:
 
                 # Создаем экземпляр мессенджера
                 MessengerApp(self.server, nickname, password, self.isRegister)
@@ -355,7 +354,6 @@ class InputWindow:
                 
             except Exception as e:
                 # messagebox.showerror("Ошибка подключения", f"Не удалось подключиться к серверу: {str(e)}")
-                self.root.destroy()
                 InputWindow(self.server)
 
         except Exception as e:
@@ -574,7 +572,7 @@ class ServerListWindow:
             
     def edit_server(self):
         if not self.selected_server:
-            messagebox.showwarning("Предупреждение", "Выберите сервер для редактирования")
+            AlertFrame(self.root, f"Выберите сервер для редактирования", False)
             return
             
         if not self.dialog_open:
@@ -602,15 +600,13 @@ class ServerListWindow:
     def delete_server(self):
         """Удаление выбранного сервера"""
         if not self.selected_server:
-            messagebox.showwarning("Предупреждение", "Выберите сервер для удаления")
+            AlertFrame(self.root, "Выберите сервер для удаления", False)
             return
             
-        # Запрашиваем подтверждение
-        if messagebox.askyesno("Подтверждение", "Вы уверены, что хотите удалить этот сервер?"):
-            self.servers.remove(self.selected_server)
-            self.save_servers()
-            self.selected_server = None
-            self.update_server_list()
+        self.servers.remove(self.selected_server)
+        self.save_servers()
+        self.selected_server = None
+        self.update_server_list()
         
     def connect_to_server(self, server):
         """Подключение к выбранному серверу"""
@@ -618,19 +614,19 @@ class ServerListWindow:
         InputWindow(server)
         
 
-    def logout(self):
-        """Выход из аккаунта"""
-        if messagebox.askyesno("Подтверждение", "Вы уверены, что хотите выйти из аккаунта?"):
-            try:
-                # Удаляем файл с данными пользователя
-                if os.path.exists(os.path.join("assets", "config", "user_data.json")):
-                    os.remove(os.path.join("assets", "config", "user_data.json"))
+    # def logout(self):
+    #     """Выход из аккаунта"""
+    #     if messagebox.askyesno("Подтверждение", "Вы уверены, что хотите выйти из аккаунта?"):
+    #         try:
+    #             # Удаляем файл с данными пользователя
+    #             if os.path.exists(os.path.join("assets", "config", "user_data.json")):
+    #                 os.remove(os.path.join("assets", "config", "user_data.json"))
                 
-                # Закрываем текущее окно и открываем окно регистрации
-                self.root.destroy()
-                InputWindow()
-            except Exception as e:
-                messagebox.showerror("Ошибка", f"Не удалось выйти из аккаунта: {str(e)}")
+    #             # Закрываем текущее окно и открываем окно регистрации
+    #             self.root.destroy()
+    #             InputWindow()
+    #         except Exception as e:
+    #             messagebox.showerror("Ошибка", f"Не удалось выйти из аккаунта: {str(e)}")
 
     def show_profile(self):
         if not hasattr(self, 'profile_window') or not self.profile_window.winfo_exists():
@@ -925,25 +921,41 @@ class ServerDialog:
         self.dialog.wait_window()
         return self.result
 
-class DisconnectFrame(ctk.CTkFrame):
-    def __init__(self, master):
-        super().__init__(master)
+class MessageFrame(): # Абстрактный класс для создания окон уведомлений
+    def __init__(self, root, title, message_icon, message_color, message_text, hide_root=False):
+        self.hide_root = hide_root
+
+        master = ctk.CTkToplevel(root)
+
+        if self.hide_root: # Проверяем, нужно ли удалить главное окно
+            root.withdraw()
+            master.protocol("WM_DELETE_WINDOW", root.destroy)
+
+        self.title = title
+        self.message_icon = message_icon
+        self.message_color = message_color
+        self.message_text = '\n'.join(message_text[i:i+55] for i in range(0, len(message_text), 55)) # Если строка слишком длинная - форматируем, расставляя переходы на новую строку
 
         def closeWindow():
             master.destroy()
+
+            if self.hide_root: # Если главное окно было скрыто, значит его надо будет ещё и удалить
+                root.destroy()
+
             ServerListWindow()
         
         # Настраиваем цвета
-        self.configure(fg_color='transparent')  # Делаем фрейм прозрачным
+        # master.configure(fg_color='transparent')  # Делаем фрейм прозрачным
         master.configure(fg_color='#1A1A1A')   # Устанавливаем цвет фона главного окна
         
         # Устанавливаем размеры окна
         master.geometry('700x350')  # Устанавливаем размеры окна
         master.resizable(False, False)
-        master.title("SproutLine - Disconnect window")
+        master.title(f"SproutLine - {self.title}")
+
         # Создаем внутренний фрейм для содержимого
         content_frame = ctk.CTkFrame(
-            self,
+            master,
             fg_color='#1E1E1E',  # Чуть светлее основного фона
             corner_radius=10,
             width=700,           # Указываем размеры при создании
@@ -951,21 +963,21 @@ class DisconnectFrame(ctk.CTkFrame):
         )
         content_frame.place(relx=0.5, rely=0.5, anchor="center")
         
-        # Иконка Дисконнекта
+        # Иконка Сообщения
         ban_label = ctk.CTkLabel(
             content_frame,
-            text="⚠️",
+            text=self.message_icon,
             font=("Arial", 40),
-            text_color='#FFF133'
+            text_color=self.message_color
         )
         ban_label.pack(pady=(20, 5))
         
         # Текст сообщения
         message_label = ctk.CTkLabel(
             content_frame,
-            text="Вы были отключены от сервера",
+            text=self.message_text,
             font=("Arial Bold", 24),
-            text_color="#FFF133"
+            text_color=self.message_color,
         )
         message_label.pack(pady=5)
         
@@ -981,69 +993,33 @@ class DisconnectFrame(ctk.CTkFrame):
         )
         close_button.pack(pady=15)
         
-        # Растягиваем фрейм на все окно
-        self.pack(fill="both", expand=True)
+        # # Растягиваем фрейм на все окно
+        # master.pack(fill="both", expand=True)
 
-class BanFrame(ctk.CTkFrame):
+class AlertFrame(MessageFrame):
+    def __init__(self, master, alert_text="Вы были отключены от сервера", hide_root=True):
+        self.title = "Alert window"
+        self.message_icon = "⚠️"
+        self.message_color = "#FFF133"
+        self.message_text = alert_text
+        super().__init__(master, self.title, self.message_icon, self.message_color, self.message_text, hide_root)
+
+
+class BanFrame(MessageFrame):
     def __init__(self, master):
-        super().__init__(master)
+        self.title = "Ban Window"
+        self.message_icon = "⛔"
+        self.message_color = "#FF3333"
+        self.message_text = "ВЫ ЗАБАНЕНЫ"
+        super().__init__(master, self.title, self.message_icon, self.message_color, self.message_text, True)
 
-        def closeWindow():
-            master.destroy()
-            ServerListWindow()
-        
-        # Настраиваем цвета
-        self.configure(fg_color='transparent')  # Делаем фрейм прозрачным
-        master.configure(fg_color='#1A1A1A')   # Устанавливаем цвет фона главного окна
-        
-        # Устанавливаем размеры окна
-        master.geometry('700x350')  # Устанавливаем размеры окна
-        master.resizable(False, False)
-        master.title("SproutLine - BANNED WINDOW")
-        # Создаем внутренний фрейм для содержимого
-        content_frame = ctk.CTkFrame(
-            self,
-            fg_color='#1E1E1E',  # Чуть светлее основного фона
-            corner_radius=10,
-            width=700,           # Указываем размеры при создании
-            height=350
-        )
-        content_frame.place(relx=0.5, rely=0.5, anchor="center")
-        
-        # Иконка бана
-        ban_label = ctk.CTkLabel(
-            content_frame,
-            text="⛔",
-            font=("Arial", 40),
-            text_color='#FF3333'
-        )
-        ban_label.pack(pady=(20, 5))
-        
-        # Текст сообщения
-        message_label = ctk.CTkLabel(
-            content_frame,
-            text="ВЫ ЗАБАНЕНЫ",
-            font=("Arial Bold", 24),
-            text_color='#FF3333'
-        )
-        message_label.pack(pady=5)
-        
-        # Кнопка закрытия
-        close_button = ctk.CTkButton(
-            content_frame,
-            text="Закрыть",
-            font=("Arial", 14),
-            fg_color='#2A2A2A',
-            hover_color='#3A3A3A',
-            command=closeWindow,
-            width=120
-        )
-
-        
-        close_button.pack(pady=15)
-        
-        # Растягиваем фрейм на все окно
-        self.pack(fill="both", expand=True)
+class ErrorFrame(MessageFrame):
+    def __init__(self, master, error_text, hide_root=True):
+        self.title = "Error Window"
+        self.message_icon = "☠️"
+        self.message_color = "#FFFFFF"
+        self.message_text = error_text
+        super().__init__(master, self.title, self.message_icon, self.message_color, self.message_text, hide_root)
 
 def check_internet_connection():
     """Проверка подключения к интернету"""
@@ -1123,17 +1099,16 @@ class MessengerApp:
                 self.init_userlist = [user.strip() for user in response[1][6:].split(",") if user.strip()] # Получаем начальный список пользователей
 
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Ошибка при инициализации: {e}")
-            InputWindow(self.server)
+            ErrorFrame(self.root, f"Ошибка при инициализации: {e}")
             return
             
         self.connected = True
         self.unsent_messages = []
 
         # Если не забанен, создаем интерфейс
-        self.root.after(0, self.setup_interface) # Даем время инициализизоваться root интерфейсу, поэтому вызываем через after
+        self.root.after(100, self.setup_interface) # Даем время инициализизоваться root интерфейсу, поэтому вызываем через after
         
-        self.root.after(0, self.check_connection_status) # Начальная проверка статуса
+        self.root.after(200, self.check_connection_status) # Начальная проверка статуса
 
         # Запускаем главный цикл
         self.root.mainloop()
@@ -1272,7 +1247,7 @@ class MessengerApp:
             self.photo_send = CTkImage(light_image=None, dark_image=self.image_send)
             self.photo_exit = CTkImage(light_image=None, dark_image=self.image_exit) 
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Ошибка при загрузке изображения: {e}")
+            ErrorFrame(self.root, f"Ошибка при загрузке изображения: {e}", False)
             self.photo_send = None
             self.photo_exit = None
         
@@ -1708,7 +1683,7 @@ class MessengerApp:
         except FileNotFoundError:
             self.save_settings()
         except json.JSONDecodeError:
-            messagebox.showerror("Предупреждение", "Файл настроек поврежден. Используются настройки по умолчанию.")
+            AlertFrame(self.root, "Файл настроек поврежден. Используются настройки по умолчанию.", False)
             self.save_settings()
             
     def save_settings(self):
@@ -1716,7 +1691,7 @@ class MessengerApp:
             with open(os.path.join("assets", "config", "settings.json"), "w", encoding='utf-8') as f:
                 json.dump(self.settings, f, indent=4, ensure_ascii=False)
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Ошибка при сохранении настроек: {e}")
+            ErrorFrame(self.root, f"Ошибка при сохранении настроек: {e}", False)
 
     def apply_saved_settings(self):
         if 'current_theme' in self.settings:
@@ -1899,9 +1874,9 @@ class MessengerApp:
         self.connected = False
         self.client_socket.close()
 
-        # Очищаем текущее окно
-        for widget in self.root.winfo_children():
-            widget.destroy()
+        # # Очищаем текущее окно
+        # for widget in self.root.winfo_children():
+        #     widget.destroy()
         
         # Показываем фрейм бана
         BanFrame(self.root)
@@ -1919,7 +1894,7 @@ class MessengerApp:
             widget.destroy()
 
         # Показываем фрейм дисконнекта
-        DisconnectFrame(self.root)
+        AlertFrame(self.root)
             
 
     def show_settings(self):
@@ -2077,67 +2052,67 @@ def center_window(window, width, height):
     y = (screen_height // 2) - (height // 2)
     window.geometry(f'{width}x{height}+{x}+{y}')
 
-def ensure_directories_and_files():
-    """Создание необходимых директорий и файлов"""
-    try:
-        # Получаем путь к директории, где находится скрипт
-        base_dir = os.path.dirname(os.path.abspath(__file__))
+
+
+
+class InitClass():
+    def __init__(self):
+        self.root = ctk.CTk()
+        self.root.after(0, self.ensure_directories_and_files)
+        self.root.mainloop()
+
+    def ensure_directories_and_files(self): # Проверяем и создаем необходимые директории и файлы
+        """Создание необходимых директорий и файлов"""
+
+        try:
+            # Получаем путь к директории, где находится скрипт
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            
+            # Создаем пути относительно директории скрипта
+            assets_dir = os.path.join(base_dir, "assets")
+            config_dir = os.path.join(assets_dir, "config")
+            images_dir = os.path.join(assets_dir, "images")
+            
+            # Создаем директории
+            os.makedirs(config_dir, exist_ok=True)
+            os.makedirs(images_dir, exist_ok=True)
+            
+            # Обновляем пути к файлам
+            user_data_path = os.path.join(config_dir, "user_data.json")
+            servers_path = os.path.join(config_dir, "servers.json")
+            settings_path = os.path.join(config_dir, "settings.json")
+            
+            # Создаем файлы если они не существуют
+            if not os.path.exists(user_data_path):
+                with open(user_data_path, "w", encoding='utf-8') as f:
+                    json.dump({}, f)
+                    
+            if not os.path.exists(servers_path):
+                with open(servers_path, "w", encoding='utf-8') as f:
+                    json.dump([], f)
+                    
+            if not os.path.exists(settings_path):
+                default_settings = {
+                    'show_seconds': True,
+                    'message_sound': True,
+                    'auto_scroll': True,
+                    'font_size': 14,
+                    'text_scale': 1.0,
+                    'show_join_leave': True,
+                    'current_theme': 'dark'
+                }
+                with open(settings_path, "w", encoding='utf-8') as f:
+                    json.dump(default_settings, f, indent=4, ensure_ascii=False)
+                    
+        except PermissionError:
+            ErrorFrame(self.root, "Отказано в доступе. Попробуйте запустить программу от имени администратора.")
+            sys.exit(1)
+        except Exception as e:
+            ErrorFrame(self.root, f"Не удалось создать необходимые файлы и директории: {str(e)}")
+            sys.exit(1)
         
-        # Создаем пути относительно директории скрипта
-        assets_dir = os.path.join(base_dir, "assets")
-        config_dir = os.path.join(assets_dir, "config")
-        images_dir = os.path.join(assets_dir, "images")
-        
-        # Создаем директории
-        os.makedirs(config_dir, exist_ok=True)
-        os.makedirs(images_dir, exist_ok=True)
-        
-        # Обновляем пути к файлам
-        user_data_path = os.path.join(config_dir, "user_data.json")
-        servers_path = os.path.join(config_dir, "servers.json")
-        settings_path = os.path.join(config_dir, "settings.json")
-        
-        # Создаем файлы если они не существуют
-        if not os.path.exists(user_data_path):
-            with open(user_data_path, "w", encoding='utf-8') as f:
-                json.dump({}, f)
-                
-        if not os.path.exists(servers_path):
-            with open(servers_path, "w", encoding='utf-8') as f:
-                json.dump([], f)
-                
-        if not os.path.exists(settings_path):
-            default_settings = {
-                'show_seconds': True,
-                'message_sound': True,
-                'auto_scroll': True,
-                'font_size': 14,
-                'text_scale': 1.0,
-                'show_join_leave': True,
-                'current_theme': 'dark'
-            }
-            with open(settings_path, "w", encoding='utf-8') as f:
-                json.dump(default_settings, f, indent=4, ensure_ascii=False)
-                
-    except PermissionError:
-        messagebox.showerror("Ошибка", "Отказано в доступе. Попробуйте запустить программу от имени администратора.")
-        return False
-    except Exception as e:
-        messagebox.showerror("Ошибка", f"Не удалось создать необходимые файлы и директории: {str(e)}")
-        return False
-    return True
+        self.root.destroy()
+        ServerListWindow()
 
 if __name__ == "__main__":
-    # Проверяем и создаем необходимые директории и файлы
-    if ensure_directories_and_files():
-        # with open(os.path.join("assets", "config", "user_data.json"), "r") as f:
-        #         user_data = json.load(f)
-        ServerListWindow()
-        # try:
-        #     with open(os.path.join("assets", "config", "user_data.json"), "r") as f:
-        #         user_data = json.load(f)
-        #     ServerListWindow()
-        # except (FileNotFoundError, json.JSONDecodeError):
-        #     RegistrationWindow()
-    else:
-        sys.exit(1)
+    InitClass()
