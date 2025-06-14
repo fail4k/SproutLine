@@ -425,7 +425,7 @@ def ban_user(nickname):
                 remove(sock_to_ban)
         
         with db_lock:
-            cursor.execute('INSERT INTO Banned_Users (username, ip) VALUES (?, ?)', (nickname, client_ip)) # Добавляем нашего забаненного пользователя
+            cursor.execute('INSERT INTO Banned_Users (username, ip) VALUES (?, ?)', (nickname, client_ip,)) # Добавляем нашего забаненного пользователя
             connection.commit() # Применяем изменения в БД
         return True
     except Exception as e:
@@ -436,7 +436,7 @@ def unban_user(nickname):
     """Разбанить пользователя"""
     if check_is_banned(nickname):
         with db_lock:
-            cursor.execute('DELETE FROM Banned_Users WHERE username = ?', (nickname)) # Удаляем нашего забаненного пользователя
+            cursor.execute('DELETE FROM Banned_Users WHERE username = ?', (nickname,)) # Удаляем нашего забаненного пользователя
             connection.commit() # Применяем изменения в БД
 
         # # Удаляем IP из banned_ips если он был связан с этим пользователем
