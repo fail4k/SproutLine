@@ -931,6 +931,7 @@ class MessageFrame(): # Абстрактный класс для создани�
             root.withdraw()
             master.protocol("WM_DELETE_WINDOW", root.destroy)
 
+        # Задаем необходимые переменные
         self.title = title
         self.message_icon = message_icon
         self.message_color = message_color
@@ -945,7 +946,6 @@ class MessageFrame(): # Абстрактный класс для создани�
             ServerListWindow()
         
         # Настраиваем цвета
-        # master.configure(fg_color='transparent')  # Делаем фрейм прозрачным
         master.configure(fg_color='#1A1A1A')   # Устанавливаем цвет фона главного окна
         
         # Устанавливаем размеры окна
