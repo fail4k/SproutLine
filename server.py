@@ -1051,6 +1051,7 @@ class ServerStartDialog:
         )
         logo_label.pack(pady=10)
         
+        # Название блока настроек
         description = ctk.CTkLabel(
             self.dialog,
             text="Настройка сервера",
