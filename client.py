@@ -1,3 +1,4 @@
+from logging import disable
 import customtkinter as ctk
 import socket
 import threading
@@ -13,7 +14,6 @@ import sys
 
 def set_window_dark_title_bar(window):
     """Установка темной темы для заголовка окна Windows"""
-
     try:
         window.update()
         DWMWA_USE_IMMERSIVE_DARK_MODE = 20
@@ -828,7 +828,7 @@ class ServerDialog:
         self.dialog.title(title)
         self.dialog.geometry("400x300")
         self.dialog.resizable(False, False)
-        
+
         # Устанавливаем темную тему
         self.dialog.configure(fg_color="#1A1A1A")
         
@@ -1251,7 +1251,7 @@ class MessengerApp:
             self.photo_send = None
             self.photo_exit = None
         
-        self.message_display = ctk.CTkTextbox(self.root, width=500, height=300, corner_radius=10, state='disabled')
+        self.message_display = ctk.CTkTextbox(self.root, width=500, height=300, corner_radius=10, state="disabled")
         self.message_display.place(relx=0.01, rely=0.01)
         self.message_display.configure(font=("Arial", 14))
         
