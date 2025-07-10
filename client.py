@@ -1048,8 +1048,8 @@ class MessengerApp:
         self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
                 
         # Устанавливаем размеры окна
-        window_width = 700
-        window_height = 350
+        window_width = 750
+        window_height = 340
         
         # Получаем размеры экрана
         screen_width = self.root.winfo_screenwidth()
@@ -1239,24 +1239,29 @@ class MessengerApp:
         
         try:
             self.image_send = Image.open(os.path.join("assets", "images", "send.png"))
-            self.image_send = self.image_send.resize((50, 50), Image.LANCZOS)
+            self.image_send = self.image_send.resize((500, 500), Image.LANCZOS)
 
             self.image_exit = Image.open(os.path.join("assets", "images", "exit.png"))
             self.image_exit = self.image_exit.resize((50, 50), Image.LANCZOS)
 
+            self.image_settings = Image.open(os.path.join("assets", "images", "settings.png"))
+            self.image_settings = self.image_settings.resize((50, 50), Image.LANCZOS)
+
             self.photo_send = CTkImage(light_image=None, dark_image=self.image_send)
-            self.photo_exit = CTkImage(light_image=None, dark_image=self.image_exit) 
+            self.photo_exit = CTkImage(light_image=None, dark_image=self.image_exit)
+            self.photo_settings = CTkImage(light_image=None, dark_image=self.image_settings)
+
         except Exception as e:
             ErrorFrame(self.root, f"Ошибка при загрузке изображения: {e}", False)
             self.photo_send = None
             self.photo_exit = None
         
-        self.message_display = ctk.CTkTextbox(self.root, width=500, height=300, corner_radius=10, state="disabled")
-        self.message_display.place(relx=0.01, rely=0.01)
+        self.message_display = ctk.CTkTextbox(self.root, width=500, height=283, corner_radius=10, state="disabled")
+        self.message_display.place(relx=0.07, rely=0.01)
         self.message_display.configure(font=("Arial", 14))
         
-        self.profile_frame = ctk.CTkFrame(self.root, width=175, height=150, corner_radius=10, fg_color='#1B1B1B')
-        self.profile_frame.place(relx=0.74, rely=0.01)
+        self.profile_frame = ctk.CTkFrame(self.root, width=175, height=140, corner_radius=10, fg_color='#1B1B1B')
+        self.profile_frame.place(relx=0.76, rely=0.01)
         
         self.profile_label = ctk.CTkLabel(
             self.profile_frame, 
@@ -1291,7 +1296,7 @@ class MessengerApp:
         self.version_label.place(relx=0.05, rely=0.45)
 
         self.users_frame = ctk.CTkFrame(self.root, width=175, height=180, corner_radius=10, fg_color='#1B1B1B')
-        self.users_frame.place(relx=0.74, rely=0.45)
+        self.users_frame.place(relx=0.76, rely=0.45)
         
         self.users_label = ctk.CTkLabel(
             self.users_frame,
@@ -1312,33 +1317,36 @@ class MessengerApp:
         self.users_list.place(relx=0.1, rely=0.2)
         self.users_list.configure(state='disabled')
 
-        self.message_entry = ctk.CTkEntry(self.root, width=455)
-        self.message_entry.place(relx=0.01, rely=0.885)
+        self.message_entry = ctk.CTkEntry(self.root, width=455, height=40)
+        self.message_entry.place(relx=0.07, rely=0.86)
         self.message_entry.bind("<Return>", lambda event: self.send_message())
 
-        self.send_button = ctk.CTkButton(self.root, image=self.photo_send, width=30, height=25, text="", fg_color='#1a1a1a', hover_color='#303030', command=self.send_message)
-        self.send_button.place(relx=0.67, rely=0.885)
+        self.send_button = ctk.CTkButton(self.root, image=self.photo_send, width=40, height=40, font=("Arial", 15), text="", fg_color='#1a1a1a', hover_color='#303030', command=self.send_message)
+        self.send_button.place(relx=0.685, rely=0.86)
 
         # Кнопка настроек
         self.settings_button = ctk.CTkButton(
-            self.profile_frame,
-            text="Настройки",
-            width=120,
+            self.root, 
+            text="",
+            image=self.photo_settings,
+            width=40,
+            height=40,
             font=('Arial', 12),
             command=self.show_settings
         )
-        self.settings_button.place(relx=0.15, rely=0.7)
+        self.settings_button.place(relx=0.009, rely=0.86)
         
-        # Кнопка выхода с сервера (обновленная в том же стиле)
+        # кнопка выйти(да0)
         self.disconnect_button = ctk.CTkButton(
-            self.profile_frame,
+            self.root,
             text="",
             image=self.photo_exit,
             width=40,
+            height=40,
             font=('Arial', 12),
             command=self.disconnect_from_server
         )
-        self.disconnect_button.place(relx=0.75, rely=0.01)
+        self.disconnect_button.place(relx=0.009, rely=0.72)
 
         self.receive_thread = threading.Thread(target=self.receive_messages)
         self.receive_thread.daemon = True
