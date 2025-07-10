@@ -40,6 +40,11 @@ db_lock = Lock()
 clients = {}
 messages = []
 admin = None  # Никнейм текущего админа
+suppress_console_output = False
+
+def safe_print(*args, **kwargs):
+    if not suppress_console_output:
+        print(*args, **kwargs)
 
 # --- Вспомогательные функции ---
 def get_current_time():
@@ -62,13 +67,13 @@ def broadcast_message(message, sender_conn):
         broadcast_thread.start()
         broadcast_thread.join(timeout=2.5)
     except Exception as e:
-        print(f"Ошибка broadcast: {e}")
+        safe_print(f"Ошибка broadcast: {e}")
 
 def send_system_message(client_socket, message):
     try:
         client_socket.send(message.encode('utf-8'))
     except Exception as e:
-        print(f"Ошибка отправки системного сообщения: {e}")
+        safe_print(f"Ошибка отправки системного сообщения: {e}")
 
 def broadcast_users_list():
     time.sleep(1)
@@ -77,7 +82,7 @@ def broadcast_users_list():
         try:
             broadcast_message(users_list, None)
         except Exception as e:
-            print(f"Ошибка отправки системного сообщения со списком пользователей: {e}")
+            safe_print(f"Ошибка отправки системного сообщения со списком пользователей: {e}")
 
 def wrap_message(message, max_width=70):
     if message.startswith('[') and '] ' in message:
@@ -121,7 +126,7 @@ def check_user_exists_db(username):
             user = cursor.fetchone()
             return True if user else False
         except Exception as e:
-            print("Ошибка базы данных: ", e)
+            safe_print("Ошибка базы данных: ", e)
 
 def auth_db(username, password):
     with db_lock:
@@ -136,7 +141,7 @@ def auth_db(username, password):
             else:
                 return False
         except Exception as e:
-            print("Ошибка базы данных: ", e)
+            safe_print("Ошибка базы данных: ", e)
 
 def check_is_banned(username, ip=None):
     with db_lock:
@@ -148,7 +153,7 @@ def check_is_banned(username, ip=None):
             user = cursor.fetchone()
             return True if user else False
         except Exception as e:
-            print("Ошибка базы данных: ", e)
+            safe_print("Ошибка базы данных: ", e)
 
 def handle_client(client_socket, addr):
     message_cooldown = 2
@@ -171,15 +176,15 @@ def handle_client(client_socket, addr):
                     with db_lock:
                         cursor.execute('INSERT INTO Users (username, password) VALUES (?, ?)', (nickname, password,))
                         connection.commit()
-                    print("Добавлен пользователь: ", nickname)
+                    safe_print("Добавлен пользователь: ", nickname)
                 else:
-                    print(f"Пользователь {nickname} уже существует")
+                    safe_print(f"Пользователь {nickname} уже существует")
                     send_system_message(client_socket, "ERROR:NICKNAME_TAKEN")
                     client_socket.close()
                     return
             elif operation_type == "L":
                 if not auth_db(nickname, password):
-                    print(f"Пользователь {nickname} не прошёл аутентефикацию")
+                    safe_print(f"Пользователь {nickname} не прошёл аутентефикацию")
                     send_system_message(client_socket, "ERROR:WRONG_PASSWORD")
                     client_socket.close()
                     return
@@ -199,11 +204,11 @@ def handle_client(client_socket, addr):
                 users_list = "USERS:" + ",".join([name.strip() for name in clients.values()])
                 send_system_message(client_socket, f"CCT:{message_cooldown};{users_list}")
         except socket.timeout:
-            print("Ошибка подключения пользователя: ", "вышло время ожидания сокета")
+            safe_print("Ошибка подключения пользователя: ", "вышло время ожидания сокета")
             client_socket.close()
             return
         except Exception as e:
-            print("Ошибка подключения пользователя: ", e)
+            safe_print("Ошибка подключения пользователя: ", e)
             client_socket.close()
             return
         client_socket.settimeout(None)
@@ -218,7 +223,7 @@ def handle_client(client_socket, addr):
                         send_system_message(client_socket, history_message)
                         time.sleep(0.1)
                     except Exception as e:
-                        print(f"Ошибка при отправке истории: {str(e)}")
+                        safe_print(f"Ошибка при отправке истории: {str(e)}")
                         return
             send_history(messages, chunk_size)
         connect_message = f"[{get_current_time()}] {nickname} присоединился к чату"
@@ -231,7 +236,7 @@ def handle_client(client_socket, addr):
             try:
                 message = client_socket.recv(1024).decode('utf-8').strip()
                 if not message:
-                    print(f"Клиент {nickname} отключился (пустое сообщение)")
+                    safe_print(f"Клиент {nickname} отключился (пустое сообщение)")
                     broadcast_users_list()
                     break
                 if message.startswith(("USERS:", "HISTORY:")) or message == nickname:
@@ -318,10 +323,10 @@ def handle_client(client_socket, addr):
                             # broadcast_message(result + "\n", client_socket)
                         continue
             except Exception as e:
-                print(f"Ошибка получения сообщения от {nickname}: {str(e)}")
+                safe_print(f"Ошибка получения сообщения от {nickname}: {str(e)}")
                 break
     except Exception as e:
-        print(f"Критическая ошибка для {addr}: {str(e)}")
+        safe_print(f"Критическая ошибка для {addr}: {str(e)}")
     finally:
         remove(client_socket)
 
@@ -341,11 +346,11 @@ def remove(client_socket):
                     broadcast_message(disconnect_message + "\n", None)
                     broadcast_users_list()
         except Exception as e:
-            print(f"Ошибка при удалении клиента: {e}")
+            safe_print(f"Ошибка при удалении клиента: {e}")
     threading.Thread(target=do_remove, daemon=True).start()
 
 def graceful_shutdown(signum, frame):
-    print("\nЗавершение работы сервера...")
+    safe_print("\nЗавершение работы сервера...")
     with clients_lock:
         for client in clients.copy():
             send_system_message(client, "SERVER_SHUTDOWN")
@@ -388,7 +393,7 @@ def ban_user(nickname):
             connection.commit()
         return True
     except Exception as e:
-        print(f"Ошибка при бане пользователя {nickname}: {e}")
+        safe_print(f"Ошибка при бане пользователя {nickname}: {e}")
         return False
 
 def unban_user(nickname):
@@ -406,7 +411,7 @@ def add_admin(username):
             connection.commit()
             return True
         except Exception as e:
-            print(f"Ошибка при добавлении админа: {e}")
+            safe_print(f"Ошибка при добавлении админа: {e}")
             return False
 
 def remove_admin(username):
@@ -416,69 +421,69 @@ def remove_admin(username):
             connection.commit()
             return True
         except Exception as e:
-            print(f"Ошибка при удалении админа: {e}")
+            safe_print(f"Ошибка при удалении админа: {e}")
             return False
 
 def list_admins():
     with db_lock:
         cursor.execute('SELECT username FROM Admins')
         admins = cursor.fetchall()
-        print("\nСписок админов:")
+        safe_print("\nСписок админов:")
         for row in admins:
-            print(f"- {row[0]}")
-        print()
+            safe_print(f"- {row[0]}")
+        safe_print()
 
 def list_users():
     with clients_lock:
-        print("\nТекущие участники:")
+        safe_print("\nТекущие участники:")
         for nick in clients.values():
-            print(f"- {nick}")
-        print()
+            safe_print(f"- {nick}")
+        safe_print()
 
 def list_banned():
     with db_lock:
         cursor.execute('SELECT * FROM Banned_Users')
         banned_users_list = cursor.fetchall()
-        print("\nЗабаненные пользователи:")
+        safe_print("\nЗабаненные пользователи:")
         for row in banned_users_list:
-            print(f"- {row[0]} (ip: {row[1]})")
-        print()
+            safe_print(f"- {row[0]} (ip: {row[1]})")
+        safe_print()
 
 def set_admin():
     global admin
     with clients_lock:
-        print("\nВыберите никнейм для назначения админом:")
+        safe_print("\nВыберите никнейм для назначения админом:")
         nicks = list(clients.values())
         for i, nick in enumerate(nicks):
-            print(f"{i+1}. {nick}")
+            safe_print(f"{i+1}. {nick}")
         idx = input("Введите номер пользователя: ")
         try:
             idx = int(idx) - 1
             if 0 <= idx < len(nicks):
                 admin = nicks[idx]
-                print(f"Пользователь {admin} назначен админом.\n")
+                safe_print(f"Пользователь {admin} назначен админом.\n")
             else:
-                print("Некорректный номер.\n")
+                safe_print("Некорректный номер.\n")
         except:
-            print("Ошибка ввода.\n")
+            safe_print("Ошибка ввода.\n")
 
 def save_chat_history():
     try:
         with open("chat.txt", "w", encoding="utf-8") as f:
             for message in messages:
                 f.write(f"{message}\n")
-        print("История чата сохранена в chat.txt\n")
+        safe_print("История чата сохранена в chat.txt\n")
     except Exception as e:
-        print(f"Ошибка при сохранении истории чата: {e}\n")
+        safe_print(f"Ошибка при сохранении истории чата: {e}\n")
 
 def show_history():
-    print("\n===== История сообщений =====")
+    safe_print("\n===== История сообщений =====")
     if not messages:
-        print("История пуста.")
+        safe_print("История пуста.")
     else:
         for msg in messages:
-            print(msg)
-    print("============================\n")
+            safe_print(msg)
+    safe_print("============================\n")
 
 def server_command_loop():
     while True:
@@ -488,7 +493,10 @@ def server_command_loop():
             "Chat",
             "Exit"
         ]
+        global suppress_console_output
+        suppress_console_output = True
         main_cmd = select("Select category:", choices=main_options).ask()
+        suppress_console_output = False
         os.system('cls' if os.name == 'nt' else 'clear')
         if main_cmd == "Users":
             while True:
@@ -500,7 +508,9 @@ def server_command_loop():
                     "List banned users",
                     "Back"
                 ]
+                suppress_console_output = True
                 user_cmd = select("User actions:", choices=user_options).ask()
+                suppress_console_output = False
                 os.system('cls' if os.name == 'nt' else 'clear')
                 if user_cmd == "List users":
                     list_users()
@@ -508,57 +518,57 @@ def server_command_loop():
                     with clients_lock:
                         nicks = list(clients.values())
                     if not nicks:
-                        print("No active users.\n")
+                        safe_print("No active users.\n")
                         continue
                     for i, nick in enumerate(nicks):
-                        print(f"{i+1}. {nick}")
+                        safe_print(f"{i+1}. {nick}")
                     idx = input("Enter the number of the user to kick: ")
                     try:
                         idx = int(idx) - 1
                         if 0 <= idx < len(nicks):
                             kick_user(nicks[idx])
-                            print(f"User {nicks[idx]} kicked.\n")
+                            safe_print(f"User {nicks[idx]} kicked.\n")
                         else:
-                            print("Invalid number.\n")
+                            safe_print("Invalid number.\n")
                     except:
-                        print("Input error.\n")
+                        safe_print("Input error.\n")
                 elif user_cmd == "Ban user":
                     with clients_lock:
                         nicks = list(clients.values())
                     if not nicks:
-                        print("No active users.\n")
+                        safe_print("No active users.\n")
                         continue
                     for i, nick in enumerate(nicks):
-                        print(f"{i+1}. {nick}")
+                        safe_print(f"{i+1}. {nick}")
                     idx = input("Enter the number of the user to ban: ")
                     try:
                         idx = int(idx) - 1
                         if 0 <= idx < len(nicks):
                             ban_user(nicks[idx])
-                            print(f"User {nicks[idx]} banned.\n")
+                            safe_print(f"User {nicks[idx]} banned.\n")
                         else:
-                            print("Invalid number.\n")
+                            safe_print("Invalid number.\n")
                     except:
-                        print("Input error.\n")
+                        safe_print("Input error.\n")
                 elif user_cmd == "Unban user":
                     with db_lock:
                         cursor.execute('SELECT * FROM Banned_Users')
                         banned_users_list = cursor.fetchall()
                     if not banned_users_list:
-                        print("No banned users.\n")
+                        safe_print("No banned users.\n")
                         continue
                     for i, row in enumerate(banned_users_list):
-                        print(f"{i+1}. {row[0]}")
+                        safe_print(f"{i+1}. {row[0]}")
                     idx = input("Enter the number of the user to unban: ")
                     try:
                         idx = int(idx) - 1
                         if 0 <= idx < len(banned_users_list):
                             unban_user(banned_users_list[idx][0])
-                            print(f"User {banned_users_list[idx][0]} unbanned.\n")
+                            safe_print(f"User {banned_users_list[idx][0]} unbanned.\n")
                         else:
-                            print("Invalid number.\n")
+                            safe_print("Invalid number.\n")
                     except:
-                        print("Input error.\n")
+                        safe_print("Input error.\n")
                 elif user_cmd == "List banned users":
                     list_banned()
                 elif user_cmd == "Back":
@@ -571,45 +581,47 @@ def server_command_loop():
                     "List admins",
                     "Back"
                 ]
+                suppress_console_output = True
                 admin_cmd = select("Admin actions:", choices=admin_options).ask()
+                suppress_console_output = False
                 os.system('cls' if os.name == 'nt' else 'clear')
                 if admin_cmd == "Add admin":
                     with clients_lock:
                         nicks = list(clients.values())
                     if not nicks:
-                        print("No active users.\n")
+                        safe_print("No active users.\n")
                         continue
                     for i, nick in enumerate(nicks):
-                        print(f"{i+1}. {nick}")
+                        safe_print(f"{i+1}. {nick}")
                     idx = input("Enter the number of the user to add as admin: ")
                     try:
                         idx = int(idx) - 1
                         if 0 <= idx < len(nicks):
                             add_admin(nicks[idx])
-                            print(f"User {nicks[idx]} added as admin.\n")
+                            safe_print(f"User {nicks[idx]} added as admin.\n")
                         else:
-                            print("Invalid number.\n")
+                            safe_print("Invalid number.\n")
                     except:
-                        print("Input error.\n")
+                        safe_print("Input error.\n")
                 elif admin_cmd == "Remove admin":
                     with db_lock:
                         cursor.execute('SELECT username FROM Admins')
                         admins = cursor.fetchall()
                     if not admins:
-                        print("No admins to remove.\n")
+                        safe_print("No admins to remove.\n")
                         continue
                     for i, row in enumerate(admins):
-                        print(f"{i+1}. {row[0]}")
+                        safe_print(f"{i+1}. {row[0]}")
                     idx = input("Enter the number of the admin to remove: ")
                     try:
                         idx = int(idx) - 1
                         if 0 <= idx < len(admins):
                             remove_admin(admins[idx][0])
-                            print(f"User {admins[idx][0]} removed from admins.\n")
+                            safe_print(f"User {admins[idx][0]} removed from admins.\n")
                         else:
-                            print("Invalid number.\n")
+                            safe_print("Invalid number.\n")
                     except:
-                        print("Input error.\n")
+                        safe_print("Input error.\n")
                 elif admin_cmd == "List admins":
                     list_admins()
                 elif admin_cmd == "Back":
@@ -621,7 +633,9 @@ def server_command_loop():
                     "Save chat history",
                     "Back"
                 ]
+                suppress_console_output = True
                 chat_cmd = select("Chat actions:", choices=chat_options).ask()
+                suppress_console_output = False
                 os.system('cls' if os.name == 'nt' else 'clear')
                 if chat_cmd == "Show history":
                     show_history()
@@ -632,10 +646,10 @@ def server_command_loop():
         elif main_cmd == "Exit":
             graceful_shutdown(None, None)
         else:
-            print("Неизвестная команда.\n")
+            safe_print("Неизвестная команда.\n")
 
 def start_server():
-    print("=== SproutLine Server ===")
+    safe_print("=== SproutLine Server ===")
     host = input("Введите IP-адрес (по умолчанию 127.0.0.1): ").strip() or "127.0.0.1"
     while True:
         port_str = input("Введите порт (1024-65535, по умолчанию 1604): ").strip() or "1604"
@@ -644,9 +658,9 @@ def start_server():
             if 1024 <= port <= 65535:
                 break
             else:
-                print("Порт вне диапазона.")
+                safe_print("Порт вне диапазона.")
         except:
-            print("Некорректный порт.")
+            safe_print("Некорректный порт.")
     global HOST, PORT
     HOST, PORT = host, port
     signal.signal(signal.SIGINT, graceful_shutdown)
@@ -658,7 +672,7 @@ def start_server():
     try:
         server_socket.bind((HOST, PORT))
         server_socket.listen(5)
-        print(f"Сервер запущен на {HOST}:{PORT}\n")
+        safe_print(f"Сервер запущен на {HOST}:{PORT}\n")
         def accept_connections():
             while True:
                 try:
@@ -666,13 +680,13 @@ def start_server():
                     client_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                     threading.Thread(target=handle_client, args=(client_socket, addr), daemon=True).start()
                 except Exception as e:
-                    print(f"Ошибка при принятии подключения: {e}")
+                    safe_print(f"Ошибка при принятии подключения: {e}")
                     continue
         accept_thread = threading.Thread(target=accept_connections, daemon=True)
         accept_thread.start()
         server_command_loop()
     except Exception as e:
-        print(f"Ошибка запуска сервера: {str(e)}")
+        safe_print(f"Ошибка запуска сервера: {str(e)}")
         return
 
 if __name__ == "__main__":
