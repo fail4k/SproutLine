@@ -1,0 +1,6 @@
+customtkinter>=5.2.2
+darkdetect>=0.8.0
+packaging>=25.0
+pillow>=10.4.0
+questionary>=2.0.1
+plyer>=2.1.0

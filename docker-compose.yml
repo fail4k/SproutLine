@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    container_name: sproutline-server
+    ports:
+      - "1604:1604"
+    volumes:
+      - ./testDB.db:/app/testDB.db
+      - ./assets:/app/assets
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: sproutline-client
+    depends_on:
+      - server
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./assets:/app/assets
+    restart: "no"
+    network_mode: host
+

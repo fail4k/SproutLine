@@ -1,0 +1,9 @@
+{
+    "show_seconds": true,
+    "message_sound": true,
+    "auto_scroll": true,
+    "font_size": 14,
+    "text_scale": 1.4,
+    "show_join_leave": true,
+    "current_theme": "black"
+}
